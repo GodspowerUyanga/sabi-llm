@@ -1,0 +1,21 @@
+# Models are downloaded by scripts/download_model.py — never committed.
+
+# Built artifacts
+data/index/*.npy
+data/index/*.json
+benchmark_report.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+venv/
+
+# Generated exports
+data/exports/*.xlsx
+COMPLIANCE.md
+models/*.gguf

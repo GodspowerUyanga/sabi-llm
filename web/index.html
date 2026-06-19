@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sabi v1 — Offline Enterprise Assistant</title>
+<style>
+  :root {
+    --bg:#0b0f0e; --bg2:#0f1514; --panel:#121917; --panel2:#18211f; --line:#243029;
+    --line-soft:#1c2522; --text:#e9f1ee; --muted:#8ba39b; --faint:#5f736c;
+    --accent:#34d399; --accent2:#10b981; --accent-dim:#155e4b; --user:#16241f;
+    --danger:#ef6a5a; --radius:14px;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;} html,body{height:100%;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);display:flex;overflow:hidden;}
+  ::selection{background:var(--accent-dim);}
+  ::-webkit-scrollbar{width:9px;height:9px;} ::-webkit-scrollbar-thumb{background:#233029;border-radius:8px;}
+
+  /* Sidebar */
+  aside{width:288px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;}
+  .side-top{padding:18px 16px 12px;border-bottom:1px solid var(--line);}
+  .brand{display:flex;align-items:center;gap:11px;margin-bottom:14px;}
+  .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;color:#04130d;font-weight:800;font-size:15px;box-shadow:0 4px 18px rgba(52,211,153,.28);}
+  .brand h1{font-size:19px;margin:0;letter-spacing:-.3px;} .brand p{margin:1px 0 0;font-size:11px;color:var(--muted);}
+  .newbtn{width:100%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04130d;border:none;border-radius:11px;padding:11px;font-weight:700;font-size:13.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;}
+  .newbtn:hover{filter:brightness(1.07);}
+  .hist{flex:1;overflow-y:auto;padding:12px 10px;}
+  .hist h2{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--faint);margin:6px 8px 8px;font-weight:700;}
+  .conv{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:10px;cursor:pointer;color:var(--text);font-size:13px;margin-bottom:3px;border:1px solid transparent;}
+  .conv:hover{background:var(--panel2);} .conv.active{background:var(--panel2);border-color:var(--accent-dim);}
+  .conv .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .conv .del{opacity:0;color:var(--faint);background:none;border:none;cursor:pointer;font-size:15px;padding:0 2px;}
+  .conv:hover .del{opacity:1;} .conv .del:hover{color:var(--danger);}
+  .hist .empty-h{color:var(--faint);font-size:12px;padding:10px 8px;line-height:1.5;}
+  .side-bot{border-top:1px solid var(--line);padding:12px 14px;display:flex;flex-direction:column;gap:10px;}
+  .stat{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);}
+  .stat b{color:var(--accent);font-variant-numeric:tabular-nums;font-weight:600;}
+  .gauge{height:6px;background:#0a0f0d;border-radius:8px;overflow:hidden;border:1px solid var(--line-soft);}
+  .gauge>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width .5s;}
+  .lang-select{width:100%;background:#0d1411;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:8px 9px;font-size:12.5px;font-family:inherit;cursor:pointer;}
+
+  /* Main */
+  main{flex:1;display:flex;flex-direction:column;min-width:0;background:radial-gradient(1200px 500px at 70% -10%,#0e1614 0%,var(--bg) 60%);}
+  header{padding:14px 26px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .head-l{display:flex;align-items:center;gap:11px;min-width:0;}
+  .head-title{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw;}
+  .badge{font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:7px;display:inline-flex;align-items:center;gap:5px;}
+  .badge.offline{background:rgba(52,211,153,.12);color:var(--accent);border:1px solid var(--accent-dim);}
+  .badge.private{background:rgba(139,163,155,.1);color:var(--muted);border:1px solid var(--line);}
+  .badge .led{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);}
+
+  #log{flex:1;overflow-y:auto;padding:26px;display:flex;flex-direction:column;gap:18px;}
+  .row{display:flex;flex-direction:column;max-width:820px;}
+  .row.user{align-self:flex-end;align-items:flex-end;}
+  .row.bot{align-self:flex-start;width:100%;}
+  .bubble{line-height:1.62;font-size:14.5px;word-wrap:break-word;}
+  .row.user .bubble{background:var(--user);border:1px solid var(--accent-dim);padding:11px 15px;border-radius:16px 16px 5px 16px;white-space:pre-wrap;}
+  .who{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+  .who .ic{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;color:#04130d;font-weight:800;font-size:10px;}
+  .who .nm{font-size:11.5px;font-weight:700;color:var(--accent);letter-spacing:.4px;}
+  .traces{display:flex;flex-direction:column;gap:6px;margin:2px 0 9px;}
+  .trace{font-size:12px;color:var(--muted);background:#0e1613;border:1px solid var(--line-soft);border-left:2px solid var(--accent);padding:6px 11px;border-radius:8px;font-family:var(--mono);}
+  .trace b{color:var(--accent);}
+  .sources{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px;padding-top:10px;border-top:1px dashed var(--line);}
+  .sources .lbl{font-size:11px;color:var(--faint);align-self:center;}
+  .src{font-size:11px;background:#0d1411;border:1px solid var(--line);padding:3px 9px;border-radius:7px;color:var(--muted);font-family:var(--mono);} .src b{color:var(--accent);}
+  .cursor::after{content:"▋";color:var(--accent);animation:blink 1s steps(2) infinite;}
+  @keyframes blink{50%{opacity:0;}}
+  .bubble p{margin:0 0 10px;} .bubble p:last-child{margin-bottom:0;}
+  .bubble h2,.bubble h3,.bubble h4{margin:12px 0 8px;} .bubble h2{font-size:17px;} .bubble h3{font-size:15px;} .bubble h4{font-size:13.5px;}
+  .bubble ul,.bubble ol{margin:6px 0 10px;padding-left:22px;} .bubble li{margin:3px 0;}
+  .bubble code{background:#0c100f;border:1px solid var(--line-soft);border-radius:5px;padding:1px 5px;font-family:var(--mono);font-size:12.5px;}
+  .bubble table{border-collapse:collapse;margin:10px 0;width:100%;font-size:13px;border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .bubble th,.bubble td{border:1px solid var(--line);padding:8px 11px;text-align:left;}
+  .bubble th{background:var(--panel2);color:var(--accent);font-weight:600;}
+  .bubble td:not(:first-child),.bubble th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums;}
+  .bubble tr:nth-child(even) td{background:rgba(255,255,255,.02);}
+  .bubble a{color:var(--accent);} .bubble a.dl{display:inline-block;background:var(--accent-dim);color:var(--text);text-decoration:none;padding:7px 13px;border-radius:9px;font-size:13px;font-weight:600;margin-top:4px;} .bubble a.dl:hover{filter:brightness(1.2);}
+  .doc-note{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;} .doc-note .ok{color:var(--accent);}
+  .doc-note button{background:var(--accent-dim);color:var(--text);border:none;border-radius:8px;padding:5px 11px;font-size:12px;cursor:pointer;}
+
+  .empty{margin:auto;text-align:center;max-width:520px;color:var(--muted);}
+  .empty .big{font-size:18px;color:var(--text);font-weight:600;margin-bottom:8px;}
+  .empty p{line-height:1.6;font-size:13.5px;margin-bottom:16px;}
+  .examples{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .examples button{text-align:left;background:var(--panel2);color:var(--text);border:1px solid var(--line-soft);border-radius:11px;padding:11px 13px;font-size:12.5px;cursor:pointer;line-height:1.4;}
+  .examples button:hover{border-color:var(--accent-dim);}
+
+  .composer{padding:14px 26px 20px;border-top:1px solid var(--line);}
+  .inputwrap{display:flex;gap:9px;align-items:flex-end;background:var(--panel2);border:1px solid var(--line);border-radius:15px;padding:8px 8px 8px 14px;}
+  .inputwrap:focus-within{border-color:var(--accent-dim);}
+  textarea{flex:1;resize:none;background:transparent;border:none;color:var(--text);font-size:14.5px;font-family:inherit;line-height:1.5;max-height:150px;padding:8px 0;}
+  textarea:focus{outline:none;} textarea::placeholder{color:var(--faint);}
+  .attach,.send{border-radius:11px;width:44px;height:44px;cursor:pointer;display:grid;place-items:center;flex-shrink:0;border:none;}
+  .attach{background:transparent;border:1px solid var(--line);color:var(--muted);font-size:17px;}
+  .attach:hover{color:var(--accent);border-color:var(--accent-dim);}
+  .send{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04130d;font-size:18px;}
+  .send:disabled,.attach:disabled{opacity:.45;cursor:default;}
+  .hint{text-align:center;font-size:11px;color:var(--faint);margin-top:9px;}
+  @media (max-width:820px){aside{display:none;} #log,header,.composer{padding-left:15px;padding-right:15px;} .examples{grid-template-columns:1fr;}}
+
+  /* Compliance modal */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;}
+  .modal.open{display:flex;}
+  .sheet{background:var(--panel);border:1px solid var(--line);border-radius:16px;max-width:680px;width:100%;max-height:88vh;overflow-y:auto;padding:22px 24px;}
+  .sheet h2{margin:0 0 4px;font-size:18px;} .sheet .sub{color:var(--muted);font-size:12.5px;margin-bottom:16px;}
+  .ok-banner{display:flex;align-items:center;gap:10px;background:rgba(52,211,153,.1);border:1px solid var(--accent-dim);border-radius:11px;padding:11px 14px;margin-bottom:16px;font-weight:600;}
+  .ok-banner.bad{background:rgba(239,106,90,.1);border-color:#5e2a23;}
+  .ok-banner .pct{margin-left:auto;font-variant-numeric:tabular-nums;}
+  .chk{display:flex;gap:11px;padding:10px 0;border-bottom:1px solid var(--line-soft);}
+  .chk .mk{flex-shrink:0;width:20px;height:20px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:800;}
+  .chk .mk.y{background:rgba(52,211,153,.15);color:var(--accent);} .chk .mk.n{background:rgba(239,106,90,.15);color:var(--danger);}
+  .chk .lb{font-size:13.5px;font-weight:600;} .chk .dt{font-size:12px;color:var(--muted);margin-top:2px;}
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0;}
+  .metric{background:var(--panel2);border:1px solid var(--line-soft);border-radius:11px;padding:12px 14px;}
+  .metric .k{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;}
+  .metric .v{font-size:19px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums;} .metric .v small{font-size:12px;color:var(--muted);font-weight:500;}
+  .formula{font-family:var(--mono);font-size:12.5px;background:#0d1411;border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--accent);margin-top:6px;}
+  .closex{float:right;background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1;}
+  .doc-row{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line-soft);}
+  .doc-row .nm{flex:1;font-size:13.5px;word-break:break-all;} .doc-row .sz{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums;}
+  .doc-row .rm{background:rgba(239,106,90,.12);color:var(--danger);border:1px solid #5e2a23;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;}
+  .doc-row .rm:hover{filter:brightness(1.15);}
+  .doc-actions{display:flex;gap:9px;margin-top:16px;}
+  .doc-actions button{flex:1;border-radius:10px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--text);}
+  .doc-actions .danger{background:rgba(239,106,90,.1);color:var(--danger);border-color:#5e2a23;}
+</style>
+</head>
+<body>
+  <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+  <aside>
+    <div class="side-top">
+      <div class="brand"><div class="logo">S</div><div><h1>Sabi v1</h1><p>Offline enterprise assistant</p></div></div>
+      <button class="newbtn" id="newchat">＋ New chat</button>
+    </div>
+    <div class="hist" id="hist"><h2>Chat history</h2><div id="conv-list"></div></div>
+    <div class="side-bot">
+      <div class="stat"><span>Model</span><b id="m-model">…</b></div>
+      <div class="stat"><span>Documents</span><b id="m-docs">…</b></div>
+      <div class="stat"><span>Memory</span><b id="m-ram">…</b></div>
+      <div class="gauge"><i id="m-gauge"></i></div>
+      <select id="lang-select" class="lang-select" title="Reply language">
+        <option value="auto">🌐 Auto-detect (English / Pidgin)</option>
+        <option value="en">English</option><option value="pcm">Nigerian Pidgin</option>
+      </select>
+      <button class="newbtn" id="docs-btn" style="background:#0d1411;color:var(--text);border:1px solid var(--line);">🗂 Manage documents</button>
+      <button class="newbtn" id="compliance-btn" style="background:#0d1411;color:var(--accent);border:1px solid var(--accent-dim);">✓ ADTC Compliance</button>
+    </div>
+  </aside>
+
+  <main>
+    <header>
+      <div class="head-l">
+        <span class="head-title" id="chat-title">New chat</span>
+        <span class="badge offline"><span class="led"></span> Offline</span>
+        <span class="badge private">Private</span>
+      </div>
+      <span class="badge private" id="h-model">Sabi-1</span>
+    </header>
+    <div id="log"></div>
+    <div class="composer">
+      <div class="inputwrap">
+        <input type="file" id="file" accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls" style="display:none" />
+        <button class="attach" id="attach" title="Upload PDF, Word, Excel, CSV">📎</button>
+        <textarea id="input" rows="1" placeholder="Ask Sabi anything, attach a file, or ask for a pivot table…"></textarea>
+        <button class="send" id="send" title="Send">➤</button>
+      </div>
+      <div class="hint">Enter to send · 📎 PDF · Word · Excel · CSV · Everything stays on your device</div>
+    </div>
+  </main>
+
+<script>
+const $=s=>document.querySelector(s), log=$("#log");
+let busy=false, replyLang="auto";
+const KEY="sabi_v1_store";
+
+/* ---------- persistent store ---------- */
+function loadStore(){ try{return JSON.parse(localStorage.getItem(KEY))||{conv:{},active:null};}catch(e){return{conv:{},active:null};} }
+function saveStore(){ localStorage.setItem(KEY, JSON.stringify(store)); }
+let store=loadStore();
+function active(){ return store.conv[store.active]; }
+function uid(){ return "c"+Date.now()+Math.random().toString(36).slice(2,6); }
+function newConversation(){ const id=uid(); store.conv[id]={id,title:"New chat",ts:Date.now(),messages:[]}; store.active=id; saveStore(); renderSidebar(); renderMessages(); $("#input").focus(); }
+function switchTo(id){ store.active=id; saveStore(); renderSidebar(); renderMessages(); }
+function delConversation(id,ev){ ev.stopPropagation(); delete store.conv[id]; if(store.active===id){ const ids=Object.keys(store.conv); store.active=ids.length?ids[0]:null; } saveStore(); if(!store.active) newConversation(); else {renderSidebar();renderMessages();} }
+
+function renderSidebar(){
+  const list=$("#conv-list");
+  const items=Object.values(store.conv).sort((a,b)=>b.ts-a.ts);
+  if(!items.length){ list.innerHTML='<div class="empty-h">No conversations yet. Start chatting and your history saves here automatically.</div>'; return; }
+  list.innerHTML=items.map(c=>`<div class="conv ${c.id===store.active?'active':''}" data-id="${c.id}"><span class="t">${escAttr(c.title)}</span><button class="del" data-del="${c.id}">×</button></div>`).join("");
+  list.querySelectorAll(".conv").forEach(el=>el.addEventListener("click",()=>switchTo(el.dataset.id)));
+  list.querySelectorAll(".del").forEach(b=>b.addEventListener("click",e=>delConversation(b.dataset.del,e)));
+}
+function escAttr(s){return (s||"").replace(/</g,"&lt;").replace(/"/g,"&quot;");}
+
+/* ---------- markdown ---------- */
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function inlineMd(s){return esc(s)
+  .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,'<a href="$2" download class="dl">$1</a>')
+  .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
+  .replace(/`([^`]+)`/g,"<code>$1</code>")
+  .replace(/(^|[^\w])\*([^*]+)\*(?=[^\w]|$)/g,"$1<em>$2</em>")
+  .replace(/_([^_]+)_/g,"<em>$1</em>");}
+function splitRow(l){return l.trim().replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim());}
+function mdToHtml(src){
+  const L=src.split("\n"), isRow=l=>l.includes("|"), isSep=l=>/^\s*\|?[\s:|-]+\|?\s*$/.test(l)&&l.includes("-");
+  let out="",i=0;
+  while(i<L.length){const line=L[i];
+    if(isRow(line)&&i+1<L.length&&isSep(L[i+1])){const h=splitRow(line);i+=2;const rs=[];
+      while(i<L.length&&isRow(L[i])&&L[i].trim()!==""){rs.push(splitRow(L[i]));i++;}
+      out+="<table><thead><tr>"+h.map(x=>`<th>${inlineMd(x)}</th>`).join("")+"</tr></thead><tbody>"+rs.map(r=>"<tr>"+r.map(c=>`<td>${inlineMd(c)}</td>`).join("")+"</tr>").join("")+"</tbody></table>";continue;}
+    let m;
+    if(m=line.match(/^###\s+(.*)/)){out+=`<h4>${inlineMd(m[1])}</h4>`;i++;continue;}
+    if(m=line.match(/^##\s+(.*)/)){out+=`<h3>${inlineMd(m[1])}</h3>`;i++;continue;}
+    if(m=line.match(/^#\s+(.*)/)){out+=`<h3>${inlineMd(m[1])}</h3>`;i++;continue;}
+    if(/^\s*[-*]\s+/.test(line)){const it=[];while(i<L.length&&/^\s*[-*]\s+/.test(L[i])){it.push(L[i].replace(/^\s*[-*]\s+/,""));i++;}out+="<ul>"+it.map(x=>`<li>${inlineMd(x)}</li>`).join("")+"</ul>";continue;}
+    if(/^\s*\d+\.\s+/.test(line)){const it=[];while(i<L.length&&/^\s*\d+\.\s+/.test(L[i])){it.push(L[i].replace(/^\s*\d+\.\s+/,""));i++;}out+="<ol>"+it.map(x=>`<li>${inlineMd(x)}</li>`).join("")+"</ol>";continue;}
+    if(line.trim()===""){i++;continue;}
+    let p=line;i++;while(i<L.length&&L[i].trim()!==""&&!L[i].includes("|")&&!/^\s*([-*]|\d+\.)\s+/.test(L[i])&&!/^#{1,3}\s+/.test(L[i])){p+=" "+L[i];i++;}
+    out+=`<p>${inlineMd(p)}</p>`;}
+  return out;
+}
+
+/* ---------- render messages ---------- */
+function renderMessages(){
+  const c=active(); log.innerHTML="";
+  $("#chat-title").textContent=c?c.title:"New chat";
+  if(!c||!c.messages.length){ log.innerHTML=emptyState(); wireExamples(); return; }
+  for(const m of c.messages){
+    if(m.role==="user"){ const r=document.createElement("div");r.className="row user";r.innerHTML=`<div class="bubble">${esc(m.content)}</div>`;log.appendChild(r); }
+    else{ const r=document.createElement("div");r.className="row bot";r.innerHTML=`<div class="who"><span class="ic">S</span><span class="nm">SABI-1</span></div><div class="bubble">${mdToHtml(m.content)}</div>`;log.appendChild(r); }
+  }
+  scroll();
+}
+function emptyState(){return `<div class="empty"><div class="big">Sabi v1 — your offline business assistant</div><p>Ask about your documents, get exact answers from your spreadsheets, build pivot tables, create Excel sheets, and save facts to memory. Nothing leaves this device.</p><div class="examples">
+  <button>Who is currently owing, and how much?</button>
+  <button>How many customers are owing?</button>
+  <button>Create a Debtors sheet with names and balances.</button>
+  <button>What is our total revenue across all regions?</button></div></div>`;}
+function wireExamples(){document.querySelectorAll(".examples button").forEach(b=>b.addEventListener("click",()=>{$("#input").value=b.textContent;autis();$("#input").focus();}));}
+function scroll(){log.scrollTop=log.scrollHeight;}
+
+/* ---------- health ---------- */
+let BUDGET=7;
+async function loadHealth(){try{const h=await(await fetch("/api/health")).json();$("#m-model").textContent=h.model;$("#h-model").textContent=h.model;$("#m-docs").textContent=h.rag_chunks+" chunks";paintRam(h.ram_gb,h.ram_budget_gb);}catch(e){}}
+function paintRam(u,b){BUDGET=b||BUDGET;$("#m-ram").textContent=u.toFixed(2)+" GB";const p=Math.min(100,(u/BUDGET)*100);const g=$("#m-gauge");g.style.width=p+"%";g.style.background=p>85?"linear-gradient(90deg,#b4441f,var(--danger))":"";}
+setInterval(async()=>{try{const s=await(await fetch("/api/stats")).json();paintRam(s.ram_gb,s.budget_gb);}catch(e){}},4000);
+
+/* ---------- send ---------- */
+async function send(message){
+  message=message.trim(); if(busy||!message) return;
+  if(!active()) newConversation();
+  const c=active();
+  const priorHistory=c.messages.slice();           // history BEFORE this turn
+  c.messages.push({role:"user",content:message});
+  if(c.title==="New chat"){ c.title=message.slice(0,42); $("#chat-title").textContent=c.title; }
+  c.ts=Date.now(); saveStore(); renderSidebar();
+  // render user msg
+  const ur=document.createElement("div");ur.className="row user";ur.innerHTML=`<div class="bubble">${esc(message)}</div>`;
+  if($(".empty"))log.innerHTML=""; log.appendChild(ur); scroll();
+  // bot row
+  const br=document.createElement("div");br.className="row bot";
+  br.innerHTML=`<div class="who"><span class="ic">S</span><span class="nm">SABI-1</span></div><div class="traces"></div><div class="bubble cursor"></div><div class="sources" style="display:none"></div>`;
+  log.appendChild(br);scroll();
+  const traces=br.querySelector(".traces"),bubble=br.querySelector(".bubble"),sources=br.querySelector(".sources");
+  busy=true;$("#send").disabled=true;$("#attach").disabled=true;
+  let answer="";
+  try{
+    const resp=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message,language:replyLang,history:priorHistory})});
+    const reader=resp.body.getReader(),dec=new TextDecoder();let buf="";
+    while(true){const{value,done}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});
+      const parts=buf.split("\n\n");buf=parts.pop();
+      for(const p of parts){const t=p.trim();if(!t.startsWith("data:"))continue;const ev=JSON.parse(t.slice(5).trim());
+        if(ev.type==="delta"){answer+=ev.text;bubble.innerHTML=mdToHtml(answer);scroll();}
+        else if(ev.type==="tool"){const d=document.createElement("div");d.className="trace";d.innerHTML=`<b>⚙ ${esc(ev.name)}</b> → ${esc(String(ev.summary))}`;traces.appendChild(d);scroll();}
+        else if(ev.type==="sources"){sources.style.display="flex";sources.innerHTML='<span class="lbl">Sources</span>'+ev.items.map(i=>`<span class="src">${esc(i.name)} <b>${i.score}</b></span>`).join("");}
+        else if(ev.type==="done"&&ev.ram_gb!=null)paintRam(ev.ram_gb,BUDGET);
+      }
+    }
+  }catch(e){bubble.innerHTML=mdToHtml(answer+"\n\n_[connection error: "+e.message+"]_");}
+  bubble.classList.remove("cursor");
+  c.messages.push({role:"assistant",content:answer}); c.ts=Date.now(); saveStore(); renderSidebar();
+  busy=false;$("#send").disabled=false;$("#attach").disabled=false;$("#input").focus();
+}
+
+/* ---------- upload ---------- */
+async function uploadFile(f){
+  if(busy||!f) return; if(!active())newConversation();
+  busy=true;$("#send").disabled=true;$("#attach").disabled=true;
+  if($(".empty"))log.innerHTML="";
+  const br=document.createElement("div");br.className="row bot";
+  br.innerHTML=`<div class="who"><span class="ic">S</span><span class="nm">SABI-1</span></div><div class="bubble"><div class="doc-note">Indexing <b>${esc(f.name)}</b>…</div></div>`;
+  log.appendChild(br);scroll();const note=br.querySelector(".doc-note");
+  try{const fd=new FormData();fd.append("file",f);const d=await(await fetch("/api/upload",{method:"POST",body:fd})).json();
+    if(d.error){note.innerHTML=`Could not add <b>${esc(f.name)}</b>: ${esc(d.error)}`;}
+    else{note.innerHTML=`<span class="ok">✓</span> Added <b>${esc(d.name)}</b> (${d.added} chunks). Ask about it or <button id="sb">Summarise it</button>`;
+      note.querySelector("#sb").addEventListener("click",()=>send(`Summarise the document "${d.name}" in 5 clear bullet points.`));
+      const c=active();c.messages.push({role:"assistant",content:`✓ Added **${d.name}** (${d.added} chunks). Ask me about it.`});saveStore();
+      loadHealth();}
+  }catch(e){note.innerHTML="Upload error: "+esc(e.message);}
+  busy=false;$("#send").disabled=false;$("#attach").disabled=false;
+}
+
+/* ---------- wiring ---------- */
+const input=$("#input");
+function autis(){input.style.height="auto";input.style.height=Math.min(150,input.scrollHeight)+"px";}
+input.addEventListener("input",autis);
+input.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();fire();}});
+$("#send").addEventListener("click",fire);
+function fire(){const v=input.value;input.value="";autis();send(v);}
+$("#newchat").addEventListener("click",newConversation);
+$("#attach").addEventListener("click",()=>$("#file").click());
+$("#file").addEventListener("change",e=>{const f=e.target.files[0];e.target.value="";uploadFile(f);});
+$("#lang-select").addEventListener("change",e=>{replyLang=e.target.value;});
+
+/* ---------- compliance modal ---------- */
+const modal=$("#modal");
+function closeModal(){modal.classList.remove("open");}
+modal.addEventListener("click",e=>{if(e.target===modal)closeModal();});
+$("#compliance-btn").addEventListener("click",openCompliance);
+
+/* ---------- documents manager ---------- */
+$("#docs-btn").addEventListener("click",openDocs);
+async function openDocs(){
+  modal.classList.add("open");
+  $("#sheet").innerHTML='<div class="sub">Loading documents…</div>';
+  await renderDocs();
+}
+async function renderDocs(){
+  let d; try{d=await(await fetch("/api/documents")).json();}catch(e){$("#sheet").innerHTML='<button class="closex" id="cx">×</button><p>Could not load documents.</p>';$("#cx").onclick=closeModal;return;}
+  const rows=d.documents.length
+    ? d.documents.map(f=>`<div class="doc-row"><span class="nm">${esc(f.name)}</span><span class="sz">${f.kb} KB</span><button class="rm" data-rm="${escAttr(f.name)}">Delete</button></div>`).join("")
+    : '<div class="empty-h" style="padding:14px 0">No documents yet. Use the 📎 button in the chat to upload PDF, Word, Excel, CSV or text.</div>';
+  $("#sheet").innerHTML=`<button class="closex" id="cx">×</button>
+    <h2>Documents</h2>
+    <div class="sub">${d.documents.length} file(s) · ${d.chunks} indexed chunks · everything stays on your device</div>
+    ${rows}
+    <div class="doc-actions">
+      <button id="dadd">📎 Upload a document</button>
+      ${d.documents.length?'<button class="danger" id="dclear">Delete all</button>':''}
+    </div>`;
+  $("#cx").onclick=closeModal;
+  $("#dadd").onclick=()=>{closeModal();$("#file").click();};
+  const dc=$("#dclear"); if(dc)dc.onclick=clearDocs;
+  $("#sheet").querySelectorAll(".rm").forEach(b=>b.addEventListener("click",()=>delDoc(b.dataset.rm)));
+}
+async function delDoc(name){
+  if(!confirm(`Delete "${name}"? Sabi will forget it and re-index the rest.`))return;
+  try{await fetch("/api/documents/"+encodeURIComponent(name),{method:"DELETE"});}catch(e){}
+  await renderDocs(); loadHealth();
+}
+async function clearDocs(){
+  if(!confirm("Delete ALL documents Sabi has indexed? This cannot be undone."))return;
+  try{await fetch("/api/documents/clear",{method:"POST"});}catch(e){}
+  await renderDocs(); loadHealth();
+}
+async function openCompliance(){
+  modal.classList.add("open");
+  $("#sheet").innerHTML='<div class="sub">Loading live telemetry…</div>';
+  let d; try{d=await(await fetch("/api/compliance")).json();}catch(e){$("#sheet").innerHTML='<button class="closex">×</button><p>Could not load compliance data.</p>';$("#sheet .closex").onclick=closeModal;return;}
+  const mem=d.memory,m=d.model;
+  const checks=d.checks.map(c=>`<div class="chk"><div class="mk ${c.ok?'y':'n'}">${c.ok?'✓':'×'}</div><div><div class="lb">${esc(c.label)}</div><div class="dt">${esc(c.detail)}</div></div></div>`).join("");
+  $("#sheet").innerHTML=`<button class="closex" id="cx">×</button>
+    <h2>ADTC Compliance — Sabi v1</h2>
+    <div class="sub">Live readings from this machine · target: ADTC Standard Laptop (8 GB RAM, integrated graphics)</div>
+    <div class="ok-banner ${d.all_passed?'':'bad'}"><span>${d.all_passed?'✅ All constraints satisfied':'⚠ Review the unmet checks'}</span><span class="pct">${d.passed}/${d.total}</span></div>
+    <div class="metrics">
+      <div class="metric"><div class="k">Model weight</div><div class="v">${m.size_mb?m.size_mb+' <small>MB</small>':'<small>not downloaded</small>'}</div></div>
+      <div class="metric"><div class="k">Peak RAM</div><div class="v">${mem.peak_gb} <small>/ ${mem.budget_gb} GB</small></div></div>
+      <div class="metric"><div class="k">Efficiency score</div><div class="v">${mem.efficiency_score} <small>/ 100</small></div></div>
+      <div class="metric"><div class="k">Speed</div><div class="v">${d.tokens_per_sec?d.tokens_per_sec+' <small>tok/s</small>':'<small>run bench</small>'}</div></div>
+      <div class="metric"><div class="k">Core temp</div><div class="v">${d.thermal_c!=null?d.thermal_c+' <small>°C</small>':'<small>n/a</small>'}</div></div>
+      <div class="metric"><div class="k">Format</div><div class="v">${m.format} <small>${m.quantization}</small></div></div>
+    </div>
+    ${checks}
+    <div style="margin-top:16px"><div class="k" style="font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;">Scoring model</div>
+    <div class="formula">${esc(d.scoring.formula)}</div></div>
+    <div class="dt" style="margin-top:12px;color:var(--faint)">CPU: ${esc(d.hardware.cpu)}<br>OS: ${esc(d.hardware.os)} · Python ${esc(d.hardware.python)}</div>`;
+  $("#cx").onclick=closeModal;
+}
+
+if(!store.active||!store.conv[store.active]) newConversation(); else {renderSidebar();renderMessages();}
+loadHealth();
+</script>
+</body>
+</html>

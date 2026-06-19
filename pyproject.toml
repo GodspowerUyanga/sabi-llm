@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sabi"
+version = "1.0.0"
+description = "Sabi — offline enterprise knowledge assistant for African SMEs (ADTC 2026)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Godspower Uyanga" }]
+keywords = ["llm", "offline", "on-device", "rag", "enterprise", "africa"]
+
+[project.scripts]
+sabi = "sabi.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
