@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SABI — Offline AI Coworker</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="side-head">
+        <div class="logo">SABI</div>
+        <div class="logo-sub">Offline AI Coworker</div>
+      </div>
+      <button id="new-chat" class="new-chat">+ New chat</button>
+      <div id="conv-list" class="conv-list"></div>
+      <div class="side-foot">
+        <div id="model-dot" class="dot"></div>
+        <div id="model-label" class="model-label">connecting…</div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main id="main">
+      <header id="topbar">
+        <div id="conv-title" class="conv-title">New chat</div>
+        <div class="modes">
+          <label class="mode-label">Mode</label>
+          <select id="mode">
+            <option value="auto">Auto</option>
+            <option value="think">Think</option>
+            <option value="code">Code</option>
+            <option value="agent">Agent (acts)</option>
+          </select>
+        </div>
+      </header>
+
+      <div id="agent-warning" class="agent-warning hidden">
+        ⚠ Agent mode can create files and run commands on this machine and
+        auto-approves them in the browser. Use the terminal (<code>sabi run</code>)
+        if you want to approve each action.
+      </div>
+
+      <section id="messages" class="messages">
+        <div id="empty" class="empty">
+          <div class="empty-logo">SABI</div>
+          <p class="empty-title">How can I help you today?</p>
+          <div class="suggestions">
+            <button class="sugg">Write a PRD for an offline invoicing app</button>
+            <button class="sugg">Explain how RAG works in simple terms</button>
+            <button class="sugg">Write a Python function to validate an email</button>
+            <button class="sugg">Plan an architecture for a clinic records system</button>
+          </div>
+        </div>
+      </section>
+
+      <footer id="composer">
+        <div class="composer-inner">
+          <textarea id="input" rows="1"
+            placeholder="Ask anything…  (Shift+Enter for a new line)"></textarea>
+          <button id="send" title="Send">➤</button>
+        </div>
+        <div class="composer-hint">SABI runs fully on-device · your chats stay on this machine</div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

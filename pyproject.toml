@@ -1,22 +1,66 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sabi"
+name = "sabi-llm"
 version = "1.0.0"
-description = "Sabi — offline enterprise knowledge assistant for African SMEs (ADTC 2026)"
+description = "SABI - the offline AI coworker. On-device AI for constrained hardware (ADTC 2026)."
 readme = "README.md"
-requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
-authors = [{ name = "Godspower Uyanga" }]
-keywords = ["llm", "offline", "on-device", "rag", "enterprise", "africa"]
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Godspower Uyanga" },
+    { name = "Oreoluwa Akinwe" },
+]
+keywords = ["llm", "offline", "on-device", "ai", "agent", "gguf", "llama.cpp", "africa", "adtc"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Core runtime dependencies. llama-cpp-python is the only heavy one; everything
+# else is light. SABI also runs (in degraded mode) if optional deps are missing.
+dependencies = [
+    "rich>=13.0",
+    "psutil>=5.9",
+    "PyYAML>=6.0",
+    "numpy>=1.23",
+]
+
+[project.optional-dependencies]
+# Inference backend (quantized GGUF via llama.cpp).
+inference = ["llama-cpp-python>=0.2.50"]
+# Model download from Hugging Face.
+hub = ["huggingface_hub>=0.20"]
+# Web UI (`sabi serve`).
+serve = ["flask>=3.0"]
+# Development / testing.
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1", "flask>=3.0"]
+
+[project.urls]
+Homepage = "https://github.com/godspoweruyanga/sabi-llm"
+Repository = "https://github.com/godspoweruyanga/sabi-llm.git"
+Issues = "https://github.com/godspoweruyanga/sabi-llm/issues"
 
 [project.scripts]
-sabi = "sabi.app:main"
+sabi = "sabi.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+include = ["sabi*"]
+
+[tool.setuptools.package-data]
+sabi = ["ui/web/*.html", "ui/web/*.css", "ui/web/*.js", "../prompts/*.txt", "../config/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"

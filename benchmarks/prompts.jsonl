@@ -1,0 +1,8 @@
+{"name": "prd_generation", "intent": "THINK", "prompt": "Write a one-page PRD for an offline note-taking app for students.", "expected_keywords": ["goal", "requirements", "scope", "users"]}
+{"name": "sop_generation", "intent": "THINK", "prompt": "Create an SOP for onboarding a new sales rep at an SME.", "expected_keywords": ["steps", "responsibilities", "checklist"]}
+{"name": "architecture_plan", "intent": "THINK", "prompt": "Propose an architecture for an offline document search tool.", "expected_keywords": ["component", "data", "flow"]}
+{"name": "python_fizzbuzz", "intent": "CODE", "prompt": "Write a Python function that prints FizzBuzz from 1 to 100.", "expected_keywords": ["def", "fizz", "buzz", "range"]}
+{"name": "debug_indexerror", "intent": "CODE", "prompt": "Fix this Python: lst=[1,2,3]; print(lst[3]). Explain the bug.", "expected_keywords": ["index", "range", "out of"]}
+{"name": "js_debounce", "intent": "CODE", "prompt": "Write a debounce function in JavaScript.", "expected_keywords": ["function", "settimeout", "clear"]}
+{"name": "scaffold_cli", "intent": "CODE", "prompt": "Scaffold a Python CLI project structure with argparse.", "expected_keywords": ["argparse", "main", "def"]}
+{"name": "general_explain", "intent": "CHAT", "prompt": "Explain what RAG means in one sentence.", "expected_keywords": ["retrieval", "context"]}

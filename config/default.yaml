@@ -1,0 +1,31 @@
+# SABI default configuration
+# Every value here can be overridden by an environment variable named
+# SABI_<KEY_IN_UPPERCASE>, e.g. SABI_TEMPERATURE=0.2 or SABI_MODEL_PATH=...
+
+# ---- Model ----
+model_path: models/sabi-v1.Q4_K_M.gguf
+hf_repo_id: Doctorgp1/sabi-v1                   # Hugging Face repo hosting the GGUF
+hf_filename: sabi-v1.Q4_K_M.gguf               # file to download from that repo
+hf_revision: main                              # branch / tag / commit
+context_length: 4096
+max_tokens: 1024
+temperature: 0.4
+top_p: 0.9
+n_threads: 0          # 0 = auto (use all physical cores)
+n_gpu_layers: 0       # 0 = CPU-only; the ADTC target laptop has no discrete GPU
+
+# ---- Runtime ----
+workspace_dir: sabi_workspace
+prompts_dir: prompts
+memory_file: .sabi/memory.json
+vector_store_file: .sabi/vector_store.json
+
+# ---- Hardware limits (ADTC 2026 ceiling) ----
+ram_ceiling_gb: 7.0
+ram_target_gb: 6.5
+thermal_ceiling_c: 85.0
+
+# ---- UX ----
+ui: terminal          # terminal | web
+language: en          # en | yo | ha | ig
+verbose: false

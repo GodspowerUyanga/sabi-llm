@@ -1,0 +1,8 @@
+Classify the user's request into exactly one label: THINK, CODE, or CHAT.
+- THINK: planning, business analysis, PRD/SOP, requirements, architecture, strategy.
+- CODE: writing or debugging code, scaffolding, file/automation tasks.
+- CHAT: general question or conversation.
+Respond with only the single label word.
+
+Request: {request}
+Label:

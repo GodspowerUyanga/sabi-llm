@@ -1,21 +1,37 @@
-# Models are downloaded by scripts/download_model.py — never committed.
+# Models (downloaded from Hugging Face, too large for Git)
+models/*.gguf
+models/*.bin
 
-# Built artifacts
-data/index/*.npy
-data/index/*.json
-benchmark_report.json
+# Model build scratch (llama.cpp checkout + raw downloads + fp16 intermediates)
+.llama.cpp/
+.model-build/
+
+# SABI runtime state
+sabi_workspace/.sabi/
+sabi_workspace/**/
+!sabi_workspace/.gitkeep
+
+# Benchmarks output
+benchmarks/report.json
+benchmarks/report.md
 
 # Python
-.venv/
 __pycache__/
-*.pyc
+*.py[cod]
 *.egg-info/
-.pytest_cache/
+.eggs/
 build/
 dist/
+.venv/
 venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
 
-# Generated exports
-data/exports/*.xlsx
-COMPLIANCE.md
-models/*.gguf
+# OS / editors
+.DS_Store
+*.swp
+.idea/
+.vscode/

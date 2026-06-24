@@ -1,0 +1,7 @@
+include README.md LICENSE CHANGELOG.md CONTRIBUTING.md requirements.txt
+recursive-include prompts *.txt
+recursive-include config *.yaml
+recursive-include benchmarks *.jsonl *.md
+recursive-include scripts *.py *.sh
+recursive-include docs *.md
+recursive-include sabi/ui/web *.html *.css *.js
