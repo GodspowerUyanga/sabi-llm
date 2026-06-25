@@ -33,9 +33,9 @@ PROJECT_ROOT = PACKAGE_ROOT.parent
 
 DEFAULTS: Dict[str, Any] = {
     # --- Model ---
-    "model_path": "models/sabi-v1.Q4_K_M.gguf",
+    "model_path": "models/sabi-3b.Q4_K_M.gguf",
     "hf_repo_id": "Doctorgp1/sabi-v1",
-    "hf_filename": "sabi-v1.Q4_K_M.gguf",
+    "hf_filename": "sabi-3b.Q4_K_M.gguf",
     "hf_revision": "main",
     "context_length": 4096,
     "max_tokens": 1024,

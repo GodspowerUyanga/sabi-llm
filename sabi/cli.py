@@ -44,18 +44,33 @@ def _runtime() -> Runtime:
 def cmd_run(args) -> int:
     rt = _runtime()
     _ensure_model(rt)
+    # Prefer the full-screen opencode-style TUI when textual is installed,
+    # unless the user asked for the simple REPL with --simple.
+    from .ui import tui
+    if tui.textual_available() and not getattr(args, "simple", False):
+        tui.run_tui(rt, cwd=getattr(args, "cwd", None))
+        return 0
+    if not getattr(args, "simple", False):
+        console.warn("Tip: install the full TUI with  pip install \"sabi-llm[tui]\"  "
+                     "for the opencode-style interface.\n")
     console.banner()
-    console.kv_table("Runtime ready", [
-        ("model", rt.model.status()),
-        ("working dir", getattr(args, "cwd", None) or str(__import__("os").getcwd())),
-        ("project", rt.project.summary()),
-        ("tools", "create_dir, write_file, read_file, list_dir, run_shell"),
-    ])
     if not rt.model.is_available():
         console.warn("Model not loaded. Run `sabi doctor` or download the model "
                      "(`sabi download`). Entering chat anyway.\n")
     chat_loop(rt, auto_approve=getattr(args, "yes", False), cwd=getattr(args, "cwd", None))
     return 0
+
+
+def cmd_tui(args) -> int:
+    rt = _runtime()
+    _ensure_model(rt)
+    from .ui import tui
+    try:
+        tui.run_tui(rt, cwd=getattr(args, "cwd", None))
+        return 0
+    except RuntimeError as exc:
+        console.error(str(exc))
+        return 1
 
 
 def cmd_chat(args) -> int:
@@ -235,7 +250,7 @@ def _ensure_model(rt) -> None:
         return
     import sys as _sys
     from . import downloader
-    size_hint = "~4.7 GB" if "7B" in rt.config.hf_filename or "Q4" in rt.config.hf_filename else "the model"
+    size_hint = "~2 GB" if "3b" in rt.config.hf_filename.lower() else "the model (a few GB)"
     if not _sys.stdin.isatty():
         console.warn("Model not found. Run `sabi download` to fetch it.")
         return
@@ -280,7 +295,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("run", help="start the agentic runtime in the current project")
     sp.add_argument("--yes", action="store_true", help="auto-approve all actions (no prompts)")
     sp.add_argument("--cwd", default=None, help="working directory the agent acts in")
+    sp.add_argument("--simple", action="store_true", help="use the simple REPL instead of the TUI")
     sp.set_defaults(func=cmd_run)
+
+    sp = sub.add_parser("tui", help="full-screen opencode-style interface (needs textual)")
+    sp.add_argument("--cwd", default=None, help="working directory the agent acts in")
+    sp.set_defaults(func=cmd_tui)
 
     sp = sub.add_parser("chat", help="launch the chat interface")
     sp.add_argument("--yes", action="store_true", help="auto-approve all actions (no prompts)")

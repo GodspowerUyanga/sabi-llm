@@ -1,16 +1,16 @@
-"""Permission system for agent actions.
+"""Permission system for agent actions (opencode-style).
 
-Implements an approval flow modelled on Claude Code / opencode:
+When the agent wants to touch something outside the current project, or run a
+shell command, the user is asked:
 
-  1. When the agent wants to take an action (create a folder, write a file,
-     run a command), the user is shown exactly what will happen.
-  2. They choose: Allow once / Allow always / Deny.
-  3. If they chose "Allow always", the action category is trusted for the rest
-     of the session and they are asked to Confirm / Cancel before it runs.
-  4. "Allow once" runs the single action. "Deny" cancels it.
+    Allow once  /  Allow always  /  Reject
 
-The prompter/confirmer callables are injected so the same logic works in the
-interactive terminal, in a future web UI, and in tests (auto-approve).
+Choosing "Allow always" confirms once and then *sticks* for the rest of the
+session (keyed by directory or by "shell"), so the user is not asked again — the
+same behaviour as opencode / Claude Code.
+
+The prompter/confirmer callables are injected, so the same logic drives the
+terminal modal, the simple REPL, and tests.
 """
 
 from __future__ import annotations
@@ -25,10 +25,8 @@ class Decision(str, Enum):
     DENY = "deny"
 
 
-# A prompter takes (tool_name, action_description) and returns a Decision.
-Prompter = Callable[[str, str], Decision]
-# A confirmer takes (action_description) and returns True to proceed.
-Confirmer = Callable[[str], bool]
+Prompter = Callable[[str, str], Decision]   # (key, description) -> Decision
+Confirmer = Callable[[str], bool]            # (description) -> proceed?
 
 
 class PermissionManager:
@@ -37,41 +35,47 @@ class PermissionManager:
         prompter: Optional[Prompter] = None,
         confirmer: Optional[Confirmer] = None,
         auto_approve: bool = False,
+        prompt_all: bool = False,
     ):
         self.prompter = prompter
         self.confirmer = confirmer
         self.auto_approve = auto_approve
-        self.trusted: Set[str] = set()   # tools the user chose "Allow always"
+        # prompt_all=True  -> ask for every action (the simple REPL).
+        # prompt_all=False -> ask only for external paths / shell (the TUI).
+        self.prompt_all = prompt_all
+        self.trusted: Set[str] = set()
 
-    def is_trusted(self, tool_name: str) -> bool:
-        return tool_name in self.trusted
+    def should_prompt(self, external: bool, is_shell: bool) -> bool:
+        if self.auto_approve:
+            return False
+        if self.prompt_all:
+            return True
+        return external or is_shell
 
-    def request(self, tool_name: str, action_desc: str) -> bool:
-        """Return True if the action should proceed."""
+    def is_trusted(self, key: str) -> bool:
+        return key in self.trusted
+
+    def request(self, key: str, action_desc: str) -> bool:
+        """Return True if the action may proceed."""
         if self.auto_approve:
             return True
-
-        # Already trusted -> just confirm before running.
-        if tool_name in self.trusted:
-            return self._confirm(action_desc)
-
-        decision = self._prompt(tool_name, action_desc)
+        if key in self.trusted:
+            return True
+        decision = self._prompt(key, action_desc)
         if decision == Decision.DENY:
             return False
         if decision == Decision.ALLOW_ONCE:
             return True
         if decision == Decision.ALLOW_ALWAYS:
-            self.trusted.add(tool_name)
-            return self._confirm(action_desc)
+            if self._confirm(action_desc):
+                self.trusted.add(key)   # sticks for the rest of the session
+                return True
+            return False
         return False
 
-    # -- injected I/O (default: deny / proceed) --
-    def _prompt(self, tool_name: str, action_desc: str) -> Decision:
-        if self.prompter:
-            return self.prompter(tool_name, action_desc)
-        return Decision.DENY
+    # injected I/O (defaults: deny / proceed)
+    def _prompt(self, key: str, action_desc: str) -> Decision:
+        return self.prompter(key, action_desc) if self.prompter else Decision.DENY
 
     def _confirm(self, action_desc: str) -> bool:
-        if self.confirmer:
-            return self.confirmer(action_desc)
-        return True
+        return self.confirmer(action_desc) if self.confirmer else True

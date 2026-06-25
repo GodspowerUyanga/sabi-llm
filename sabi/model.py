@@ -1,6 +1,6 @@
 """Quantized GGUF model wrapper.
 
-SABI runs a single quantized GGUF model (e.g. Qwen2.5-Coder 7B Instruct, Q4/Q5)
+SABI runs a single quantized GGUF model (e.g. Qwen2.5-Coder 3B Instruct, Q4_K_M)
 through llama.cpp. The same model is prompted to behave as THINK or CODE
 depending on how the router classifies the task.
 
@@ -160,6 +160,42 @@ class LLMModel:
             completion_tokens=int(usage.get("completion_tokens", 0)),
             elapsed_s=elapsed,
         )
+
+    def chat_stream(
+        self,
+        messages: List[dict],
+        *,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        stop: Optional[List[str]] = None,
+    ):
+        """Yield text deltas as they are generated (for a live, fast feel)."""
+        if not self._loaded and not self.load():
+            raise ModelUnavailable(self._load_error or "model not available")
+        stream = self._llm.create_chat_completion(
+            messages=messages,
+            max_tokens=max_tokens or self.config.max_tokens,
+            temperature=self.config.temperature if temperature is None else temperature,
+            top_p=self.config.top_p,
+            stop=stop or [],
+            stream=True,
+        )
+        for chunk in stream:
+            try:
+                delta = chunk["choices"][0]["delta"].get("content")
+            except Exception:
+                delta = None
+            if delta:
+                yield delta
+
+    def count_tokens(self, text: str) -> int:
+        """Best-effort token count for the given text."""
+        if self._loaded and self._llm is not None:
+            try:
+                return len(self._llm.tokenize(text.encode("utf-8")))
+            except Exception:
+                pass
+        return max(1, len(text) // 4)
 
     def embed(self, text: str) -> Optional[List[float]]:
         """Return an embedding vector if the backend supports it, else None."""

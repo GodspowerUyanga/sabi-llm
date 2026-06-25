@@ -57,12 +57,16 @@
       </section>
 
       <footer id="composer">
+        <div id="chips" class="chips"></div>
         <div class="composer-inner">
+          <button id="attach" title="Upload a file (PDF, Word, Excel, CSV, image…)">📎</button>
           <textarea id="input" rows="1"
             placeholder="Ask anything…  (Shift+Enter for a new line)"></textarea>
           <button id="send" title="Send">➤</button>
         </div>
-        <div class="composer-hint">SABI runs fully on-device · your chats stay on this machine</div>
+        <input id="file-input" type="file" multiple style="display:none"
+          accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.tsv,.pptx,.txt,.md,.json,.html,.htm,.png,.jpg,.jpeg,.py,.js" />
+        <div class="composer-hint">SABI runs fully on-device · upload files to summarize or analyze them</div>
       </footer>
     </main>
   </div>

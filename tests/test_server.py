@@ -78,3 +78,23 @@ def test_chat_without_model_returns_graceful(client):
     assert r.status_code == 200
     body = r.get_json()
     assert "conversation_id" in body
+
+
+def test_upload_extracts_text(client):
+    import io
+    data = {"file": (io.BytesIO(b"name,score\nAda,91\n"), "data.csv")}
+    r = client.post("/api/upload", data=data, content_type="multipart/form-data")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["name"] == "data.csv"
+    assert "Ada" in body["preview"]
+    assert body["chars"] > 0
+
+
+def test_stream_endpoint_runs(client):
+    # Without a model the stream should still respond (with an error delta),
+    # set the conversation id header, and not crash.
+    r = client.post("/api/chat/stream", json={"message": "hi"})
+    assert r.status_code == 200
+    assert r.headers.get("X-Conversation-Id")
+    _ = r.get_data()  # drain the stream

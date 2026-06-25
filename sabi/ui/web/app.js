@@ -17,6 +17,9 @@
     agentWarn: $("#agent-warning"),
     modelDot: $("#model-dot"),
     modelLabel: $("#model-label"),
+    chips: $("#chips"),
+    attach: $("#attach"),
+    fileInput: $("#file-input"),
   };
 
   /* ---------------- API ---------------- */
@@ -168,26 +171,106 @@
     state.sending = true; els.send.disabled = true;
     addMessage("user", text);
     const thinking = showThinking();
-    try {
-      const res = await api.post("/api/chat", {
-        conversation_id: state.cid, message: text, mode: state.mode,
-      });
-      thinking.remove();
-      if (res.conversation_id && res.conversation_id !== state.cid) {
-        state.cid = res.conversation_id;
+
+    // Agent mode acts (creates files / runs commands) -> non-streaming call.
+    if (state.mode === "agent") {
+      try {
+        const res = await api.post("/api/chat", {
+          conversation_id: state.cid, message: text, mode: state.mode,
+        });
+        thinking.remove();
+        if (res.conversation_id) state.cid = res.conversation_id;
+        addMessage("assistant", res.answer || res.error || "(no response)", {
+          intent: res.intent, tps: res.tps, actions: res.actions,
+        });
+        await refreshTitles();
+      } catch (e) {
+        thinking.remove();
+        addMessage("assistant", "⚠ Error contacting SABI: " + e);
+      } finally {
+        finishSend();
       }
-      addMessage("assistant", res.answer || res.error || "(no response)", {
-        intent: res.intent, tps: res.tps, actions: res.actions,
+      return;
+    }
+
+    // Conversational modes -> stream tokens as they arrive.
+    try {
+      const resp = await fetch("/api/chat/stream", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: state.cid, message: text, mode: state.mode }),
       });
-      await loadConversations();
-      const conv = state.conversations.find((c) => c.id === state.cid);
-      if (conv) els.title.textContent = conv.title;
+      const newCid = resp.headers.get("X-Conversation-Id");
+      if (newCid) state.cid = newCid;
+      thinking.remove();
+      const bubble = addStreamingBubble();
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        bubble.innerHTML = renderMarkdown(buf);
+        scrollDown();
+      }
+      bubble.innerHTML = renderMarkdown(buf) +
+        '<div class="meta">CHAT · streamed</div>';
+      await refreshTitles();
     } catch (e) {
       thinking.remove();
       addMessage("assistant", "⚠ Error contacting SABI: " + e);
     } finally {
-      state.sending = false; els.send.disabled = false; els.input.focus();
+      finishSend();
     }
+  }
+
+  function finishSend() {
+    state.sending = false; els.send.disabled = false; els.input.focus();
+  }
+
+  async function refreshTitles() {
+    await loadConversations();
+    const conv = state.conversations.find((c) => c.id === state.cid);
+    if (conv) els.title.textContent = conv.title;
+  }
+
+  function addStreamingBubble() {
+    els.empty.classList.add("hidden");
+    const row = document.createElement("div");
+    row.className = "row sabi";
+    row.innerHTML = '<div class="bubble-wrap"><div class="avatar sabi">S</div>' +
+      '<div class="bubble"></div></div>';
+    els.messages.appendChild(row);
+    scrollDown();
+    return row.querySelector(".bubble");
+  }
+
+  async function uploadFiles(fileList) {
+    for (const file of fileList) {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (state.cid) fd.append("conversation_id", state.cid);
+      const chip = addFileChip(file.name, "uploading…");
+      try {
+        const r = await fetch("/api/upload", { method: "POST", body: fd });
+        const data = await r.json();
+        if (data.conversation_id) state.cid = data.conversation_id;
+        chip.textContent = "📎 " + data.name + " (" + data.chars + " chars)";
+        addMessage("assistant",
+          "Loaded **" + data.name + "**. Ask me to summarize it, extract data, " +
+          "or anything else.", { intent: "FILE" });
+      } catch (e) {
+        chip.textContent = "📎 " + file.name + " (failed)";
+      }
+    }
+  }
+
+  function addFileChip(name, status) {
+    const chip = document.createElement("span");
+    chip.className = "file-chip";
+    chip.textContent = "📎 " + name + " " + (status || "");
+    els.chips.appendChild(chip);
+    return chip;
   }
 
   async function status() {
@@ -214,6 +297,11 @@
   });
   els.send.onclick = () => { const t = els.input.value; els.input.value = ""; autosize(); send(t); };
   els.newChat.onclick = newChat;
+  els.attach.onclick = () => els.fileInput.click();
+  els.fileInput.onchange = () => {
+    if (els.fileInput.files.length) uploadFiles(els.fileInput.files);
+    els.fileInput.value = "";
+  };
   els.mode.onchange = () => {
     state.mode = els.mode.value;
     els.agentWarn.classList.toggle("hidden", state.mode !== "agent");

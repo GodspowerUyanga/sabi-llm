@@ -99,6 +99,7 @@ def chat_loop(runtime: Runtime, auto_approve: bool = False, cwd: str | None = No
         prompter=_ask_permission,
         confirmer=_confirm,
         auto_approve=auto_approve,
+        prompt_all=True,
     )
     reporter = ConsoleReporter()
     agent = runtime.make_agent(permissions=permissions, reporter=reporter, cwd=cwd)

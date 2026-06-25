@@ -104,7 +104,7 @@ class Runtime:
                 "ok": True,
                 "text": gen.text,
                 "tps": round(gen.tokens_per_second, 2),
-                "tokens": gen.completion_tokens,
+                "tokens": gen.prompt_tokens + gen.completion_tokens,
                 "elapsed_s": round(gen.elapsed_s, 2),
             })
             self.memory.add_turn("assistant", gen.text, routing.intent)

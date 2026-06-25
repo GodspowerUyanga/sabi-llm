@@ -94,14 +94,32 @@ def test_agent_creates_folder_end_to_end(tmp_path):
 
 
 def test_agent_respects_denial(tmp_path):
+    from sabi.permissions import Decision
     model = FakeModel([
         '{"tool": "create_dir", "args": {"path": "secret"}}',
         "Okay, I won't create it.",
     ])
-    pm = PermissionManager(prompter=lambda t, d: __import__("sabi.permissions",
-                           fromlist=["Decision"]).Decision.DENY)
+    # prompt_all=True makes the agent ask for every action (the simple-REPL mode)
+    pm = PermissionManager(prompter=lambda k, d: Decision.DENY, prompt_all=True)
     loop = AgentLoop(model, pm, system_prompt="sys", cwd=tmp_path)
     res = loop.run("create a folder called secret")
     assert res.ok
     assert not (tmp_path / "secret").exists()
     assert any("DENIED" in a for a in res.actions)
+
+
+def test_agent_in_project_action_not_prompted(tmp_path):
+    # Default TUI manager only prompts for external/shell, so an in-project
+    # create runs without consulting the prompter.
+    from sabi.permissions import Decision
+    model = FakeModel([
+        '{"tool": "create_dir", "args": {"path": "proj"}}',
+        "Created the folder.",
+    ])
+    calls = []
+    pm = PermissionManager(prompter=lambda k, d: calls.append(k) or Decision.DENY,
+                           prompt_all=False)
+    loop = AgentLoop(model, pm, system_prompt="sys", cwd=tmp_path)
+    res = loop.run("create a folder called proj")
+    assert (tmp_path / "proj").is_dir()
+    assert calls == []   # never prompted for an in-project path

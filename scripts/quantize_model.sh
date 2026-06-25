@@ -6,8 +6,8 @@
 #
 # Usage:
 #   ./scripts/quantize_model.sh
-#   ./scripts/quantize_model.sh --hf Qwen/Qwen2.5-Coder-7B-Instruct \
-#                               --out sabi-v1.Q4_K_M.gguf --quant Q4_K_M
+#   ./scripts/quantize_model.sh --hf Qwen/Qwen2.5-Coder-3B-Instruct \
+#                               --out sabi-3b.Q4_K_M.gguf --quant Q4_K_M
 #   ./scripts/quantize_model.sh --keep-src      # keep the raw download to re-quantize later
 #
 # Result:  models/<your-out-name>.gguf   (nothing else added to models/)
@@ -17,16 +17,17 @@
 #   pip install "huggingface_hub[cli]"
 #
 # Notes:
-#   * You need ~35 GB free disk and ideally 16 GB RAM for a 7B conversion.
+#   * A 3B conversion needs ~15 GB free disk and ideally 8-16 GB RAM.
 #   * No GPU is required to convert/quantize.
-#   * For the ADTC 7 GB ceiling, Q4_K_M is the sweet spot. If a 7B is too tight,
-#     re-run with --hf Qwen/Qwen2.5-Coder-3B-Instruct.
+#   * For the ADTC 7 GB ceiling, a 3B at Q4_K_M is the recommended sweet spot
+#     (~2 GB on disk, ~3.5-4.5 GB at runtime). If you need even smaller, try
+#     --hf Qwen/Qwen2.5-Coder-1.5B-Instruct, or --quant Q4_0 for a tighter file.
 #
 set -euo pipefail
 
 # ---- Defaults ----
-HF_MODEL="Qwen/Qwen2.5-Coder-7B-Instruct"
-OUT_NAME="sabi-v1.Q4_K_M.gguf"
+HF_MODEL="Qwen/Qwen2.5-Coder-3B-Instruct"
+OUT_NAME="sabi-3b.Q4_K_M.gguf"
 QUANT="Q4_K_M"
 KEEP_SRC=0
 LLAMA_DIR=".llama.cpp"          # hidden build dir (not inside models/)

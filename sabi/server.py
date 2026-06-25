@@ -18,35 +18,52 @@ from __future__ import annotations
 import webbrowser
 from pathlib import Path
 from threading import Timer
-from typing import Optional
+from typing import Dict, List, Optional
 
 from .config import Config, load_config
 from .runtime import Runtime
 from .conversations import ConversationStore
 from .permissions import PermissionManager
 from .agent import Reporter
+from .filereader import read_any
 
 WEB_DIR = Path(__file__).resolve().parent / "ui" / "web"
 
+# In-memory map of conversation_id -> list of {name, text} uploaded files.
+_UPLOADS: Dict[str, List[dict]] = {}
 
-def _answer(runtime: Runtime, message: str, mode: str) -> dict:
+
+def _file_context(cid: Optional[str], budget: int = 3000) -> str:
+    """Build a context block from files the user uploaded in this conversation."""
+    files = _UPLOADS.get(cid or "", [])
+    if not files:
+        return ""
+    parts = []
+    for f in files[-3:]:  # last few files
+        parts.append(f"--- FILE: {f['name']} ---\n{f['text'][:budget]}")
+    return "Attached files the user uploaded:\n" + "\n\n".join(parts)
+
+
+def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None) -> dict:
     """Produce an assistant reply for a message in the given mode."""
+    ctx = _file_context(cid)
+    msg = (message + ("\n\n" + ctx if ctx else ""))
     try:
         if mode == "think":
-            gen = runtime.think.run(message)
+            gen = runtime.think.run(msg)
             return {"answer": gen.text, "intent": "THINK",
                     "tps": round(gen.tokens_per_second, 2), "actions": []}
         if mode == "code":
-            gen = runtime.code.run(message)
+            gen = runtime.code.run(msg)
             return {"answer": gen.text, "intent": "CODE",
                     "tps": round(gen.tokens_per_second, 2), "actions": []}
         if mode == "agent":
             perms = PermissionManager(auto_approve=True)  # web auto-approves
-            res = runtime.agent(message, permissions=perms, reporter=Reporter())
+            res = runtime.agent(msg, permissions=perms, reporter=Reporter())
             return {"answer": res.get("answer", ""), "intent": "AGENT",
                     "tps": 0, "actions": res.get("actions", [])}
         # auto / chat
-        res = runtime.handle(message)
+        res = runtime.handle(msg)
         if res.get("ok"):
             return {"answer": res.get("text", ""), "intent": res.get("intent", "CHAT"),
                     "tps": res.get("tps", 0), "actions": []}
@@ -105,7 +122,7 @@ def create_app(runtime: Runtime, store: ConversationStore):
         title = (request.json or {}).get("title", "").strip() or "Untitled"
         return jsonify({"ok": store.rename(cid, title)})
 
-    # ---- chat ----
+    # ---- chat (non-streaming; used for agent mode) ----
     @app.post("/api/chat")
     def chat():
         body = request.json or {}
@@ -115,19 +132,79 @@ def create_app(runtime: Runtime, store: ConversationStore):
         if not message:
             return jsonify({"error": "empty message"}), 400
         if not cid or not store.get(cid):
-            conv = store.create()
-            cid = conv["id"]
+            cid = store.create()["id"]
 
         store.add_message(cid, "user", message)
-        result = _answer(runtime, message, mode)
+        result = _answer(runtime, message, mode, cid=cid)
         reply = result.get("answer") or result.get("error") or "(no response)"
         store.add_message(cid, "assistant", reply, meta={
-            "intent": result.get("intent"),
-            "tps": result.get("tps"),
-            "actions": result.get("actions", []),
-            "error": result.get("error"),
+            "intent": result.get("intent"), "tps": result.get("tps"),
+            "actions": result.get("actions", []), "error": result.get("error"),
         })
         return jsonify({"conversation_id": cid, **result})
+
+    # ---- chat (streaming, token-by-token) ----
+    @app.post("/api/chat/stream")
+    def chat_stream():
+        from flask import Response, stream_with_context
+        body = request.json or {}
+        cid = body.get("conversation_id")
+        message = (body.get("message") or "").strip()
+        if not message:
+            return jsonify({"error": "empty message"}), 400
+        if not cid or not store.get(cid):
+            cid = store.create()["id"]
+        store.add_message(cid, "user", message)
+
+        ctx = _file_context(cid)
+        system = runtime.prompts.get("system", "") or None
+        user = message + ("\n\n" + ctx if ctx else "")
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": user})
+
+        def generate():
+            buf = ""
+            try:
+                streamed = False
+                for delta in runtime.model.chat_stream(messages):
+                    streamed = True
+                    buf += delta
+                    yield delta
+                if not streamed:
+                    buf = runtime.model.generate(user, system=system).text
+                    yield buf
+            except Exception as exc:  # noqa: BLE001 (includes ModelUnavailable)
+                err = f"\n\n⚠ {exc}"
+                buf += err
+                yield err
+            store.add_message(cid, "assistant", buf, meta={"intent": "CHAT"})
+
+        resp = Response(stream_with_context(generate()), mimetype="text/plain")
+        resp.headers["X-Conversation-Id"] = cid
+        resp.headers["X-Accel-Buffering"] = "no"
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+    # ---- file upload (any format) ----
+    @app.post("/api/upload")
+    def upload():
+        if "file" not in request.files:
+            return jsonify({"error": "no file"}), 400
+        f = request.files["file"]
+        cid = request.form.get("conversation_id") or ""
+        if not cid or not store.get(cid):
+            cid = store.create()["id"]
+        updir = runtime.config.abs_workspace() / ".sabi" / "uploads" / cid
+        updir.mkdir(parents=True, exist_ok=True)
+        dest = updir / Path(f.filename).name
+        f.save(str(dest))
+        text = read_any(dest, max_chars=8000)
+        _UPLOADS.setdefault(cid, []).append({"name": dest.name, "text": text})
+        preview = text[:500] + ("…" if len(text) > 500 else "")
+        return jsonify({"conversation_id": cid, "name": dest.name,
+                        "chars": len(text), "preview": preview})
 
     return app
 
