@@ -13,13 +13,17 @@
 | **Memory ceiling** | 7 GB (hard limit; exceeding it = disqualification) |
 | **Authors** | Godspower Uyanga (lead) · Oreoluwa Akinwe |
 | **License** | MIT |
-| **Bonus claims** | Budget-laptop profile: **claimed** · African-language bonus: **in progress** (see §11) |
+| **Bonus claims** | Budget-laptop profile: **claimed** · African-language bonus: **not claimed** (see §11) |
 
-> **A note to reviewers on numbers.** Every quantitative claim marked `‹MEASURE›`
-> is to be filled from a real run of our profiler (`sabi benchmark` /
-> `python scripts/run_benchmark.py`) on the ADTC Standard Laptop. We have not
-> substituted estimates for measured telemetry anywhere in this report; estimates
-> are labelled as such.
+> **A note to reviewers on numbers.** The table in §8 is a real run of
+> `sabi benchmark` (our own profiler, wrapping the same llama.cpp CPU inference
+> path used at audit) on the development machine used to build SABI — **not**
+> the ADTC Standard Laptop, and not yet the official `adtc-profiler` audit tool.
+> We do not substitute estimates for measured telemetry anywhere in this report;
+> every number below came from an actual run, and every number is labelled with
+> the hardware it was measured on. We re-run both `sabi benchmark` and the
+> official `adtc-profiler` on the target 8 GB no-GPU profile before Gate 2 and
+> update this table with those figures.
 
 ---
 
@@ -174,7 +178,7 @@ any score at all.
 | RAG | Custom hashing embedder + JSON vector store | Zero-dependency, offline, tiny RAM |
 | Telemetry | `psutil` + custom profiler | Measures RSS, CPU, tokens/sec, temperature |
 | CLI / config | `argparse`, `PyYAML`, env overrides | Simple, auditable |
-| Tests | `pytest`, `pytest-asyncio` | 52 tests incl. headless TUI |
+| Tests | `pytest`, `pytest-asyncio` | 62 passing, 0 failing, 0 skipped (incl. headless TUI) |
 
 All heavy components are **optional extras** (`[tui]`, `[serve]`, `[inference]`),
 so the base install stays lean.
@@ -194,22 +198,37 @@ python scripts/run_benchmark.py  # writes benchmarks/report.json + report.md
 sabi profile                     # live RAM / CPU / temperature
 ```
 
-**Measured results on the ADTC Standard Laptop** *(to be completed from a real
-run before audit):*
+**Measured results — development machine, `sabi benchmark`, full 8-prompt set
+in `benchmarks/prompts.jsonl`** *(not the ADTC Standard Laptop; see caveat
+below the table):*
 
-| Metric | Target | Measured |
+| Metric | Target | Measured (dev machine) |
 |---|---|---|
-| Model size on disk | < 7 GB | `‹MEASURE›` GB |
-| Peak RAM (RSS) during inference | < 6.5 GB (well under 7 GB) | `‹MEASURE›` GB |
-| Efficiency score `Seff = 100×(7−PeakRAM)/7` | maximise | `‹MEASURE›` |
-| Tokens/sec (CPU) | 10–20 tok/s | `‹MEASURE›` tok/s |
-| Cold start (load → first token) | < 5 s | `‹MEASURE›` s |
-| Peak core temperature | < 85 °C (avoid −10) | `‹MEASURE›` °C |
-| Benchmark accuracy (prompt set) | maximise | `‹MEASURE›` % |
-| Crashes / OOM | 0 | `‹MEASURE›` |
+| Model size on disk | < 7 GB | **1.80 GB** |
+| Peak RAM (RSS) during inference | < 6.5 GB (well under 7 GB) | **3.28 GB** |
+| Efficiency score `Seff = 100×(7−PeakRAM)/7` | maximise | **53.1** |
+| Tokens/sec (CPU), avg across 8 prompts | 10–20 tok/s | **18.93 tok/s** |
+| Cold start (load → first token) | < 5 s | not separately instrumented by `sabi benchmark`; to be measured on audit hardware |
+| Peak core temperature / thermal throttle | < 85 °C (avoid −10) | **throttle flag tripped** — see caveat |
+| Benchmark accuracy (prompt set, keyword-match heuristic) | maximise | **78.1%** |
+| Crashes / OOM | 0 | **0** |
 
-> Reviewers can reproduce these with the commands above; the prompt set lives in
-> `benchmarks/prompts.jsonl`.
+> **Hardware caveat.** This run was on the development workstation (22 logical
+> cores, sustained package temps of 90+ °C under load from unrelated processes),
+> not the ADTC Standard Laptop (4–8 threads, i5 10th–12th gen, no discrete GPU).
+> The thermal-throttle flag reflects *this* machine, not the target profile, and
+> is not a claim about audit-hardware thermals. Tokens/sec and peak RAM are
+> expected to be broadly representative since inference is single-threaded-bound
+> per token and RSS is dominated by model weights + KV cache, but we will
+> re-measure on the actual ADTC Standard Laptop (or the closest available
+> equivalent) and with the official `adtc-profiler` tool before Gate 2, and
+> update this table with those numbers plus the DevPost self-reported Sperf/Seff
+> fields.
+>
+> Reviewers can reproduce the dev-machine numbers with the commands above; the
+> prompt set lives in `benchmarks/prompts.jsonl`. Per-prompt breakdown (tps /
+> accuracy / elapsed) is in `benchmarks/report.json` after running
+> `python scripts/run_benchmark.py`.
 
 ---
 
@@ -242,19 +261,32 @@ The harness is engineered to spend the RAM budget on the model, not on itself:
 
 ## 11. Bonus claims
 
-- **Budget-laptop profile (+10%): claimed.** SABI is designed and tested for the
-  $150–$500, 8 GB, no-GPU machine and reports its footprint against the budget.
-- **African-language bonus (+15%): in progress — not yet claimed.** The
-  architecture includes a `SABI_LANGUAGE` setting (`en|yo|ha|ig`) and localized
-  prompt scaffolding, but meaningful end-to-end functionality in an African
-  language is still being validated. **We will only claim this bonus once it is
-  demonstrably working**; this report will be updated with evidence (sample
-  transcripts) if/when it qualifies. We flag this transparently rather than
-  overclaim.
+These match `metadata.json` exactly — the claims here are not aspirational,
+they are what the repo's machine-readable submission record says.
+
+- **Budget-laptop profile (+10%): claimed** (`budget_laptop_claim: true`).
+  SABI is designed and tested for the $150–$500, 8 GB, no-GPU machine and
+  reports its footprint against the budget (§8, §10).
+- **African-language bonus (+15%): not claimed** (`african_alpha_claim: false`).
+  The architecture reserves a `SABI_LANGUAGE` config key (`en|yo|ha|ig`) for
+  this, but no localized prompts or translation layer exist yet, and live
+  testing (2026-08-14) shows the base model's raw Yoruba output is degenerate/
+  repetitive, not real fluency — the base model was not trained for African
+  languages. Meaningful end-to-end functionality is not demonstrably working.
+  We would rather ship Gate 1 honestly at a lower multiplier than have an
+  unsubstantiated claim fail the Gate 2 audit. Real support would need a local
+  translation layer (e.g. an NLLB model wrapping the existing pipeline), which
+  is a scoped follow-up, not a same-session fix. If we finish it before
+  Gate 2, we will flip this flag and add evidence (sample transcripts) — not
+  before.
 
 ---
 
 ## 12. Reproducibility (for the Gate 2 audit)
+
+Two equivalent ways to get the model, matched to the two audiences reading this
+repo: the ADTC audit harness (root-level script, per the official submission
+template) and a human contributor (the `sabi` CLI).
 
 ```bash
 git clone https://github.com/godspoweruyanga/sabi-llm.git
@@ -262,13 +294,21 @@ cd sabi-llm
 python3 -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
 pip install -e ".[tui,serve,inference]"
-sabi download          # fetch the model (~‹MEASURE› GB) into ./models/
-sabi doctor            # verify environment + size vs 7 GB budget
-sabi benchmark         # produce telemetry
-pytest                 # 52 tests, incl. headless TUI
-sabi run               # launch the coworker
+./download_model.sh    # audit-harness entry point: fetches the model (~1.8 GB)
+                        # into ./models/sabi-3b.Q4_K_M.gguf — matches
+                        # _runtime.model_path in metadata.json
+# or: sabi download     # equivalent, human-friendly CLI entry point
+sabi doctor             # verify environment + size vs 7 GB budget
+sabi benchmark          # produce telemetry
+pytest                  # test suite, incl. headless TUI
+sabi run                # launch the coworker
 ```
 
+- `metadata.json` (repo root) carries team, model, domain, cross-disciplinary
+  pairing, and the two visible test prompts, per the official
+  [ADTC 2026 submission template](https://github.com/Africa-Deep-Tech-Foundation/adtc-2026-submission-template).
+- `download_model.sh` (repo root) is the audit-harness-facing download script;
+  it and `metadata.json._runtime.model_path` agree on `models/sabi-3b.Q4_K_M.gguf`.
 - Config is in `config/default.yaml`, overridable via `SABI_*` env vars.
 - Model source is pinned (`Doctorgp1/sabi-v1`, `sabi-3b.Q4_K_M.gguf`).
 - The test suite covers routing, permissions, agent file operations, RAG,
@@ -280,22 +320,32 @@ sabi run               # launch the coworker
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Peak RAM near 7 GB → OOM/DQ | **Resolved on 3B** | 7B measured 7.07 GB (over budget); switched to a 3B (~3.5–4.5 GB runtime). Re-measure with `benchmark` to confirm headroom before audit. |
-| CPU tokens/sec vs smaller-model teams (30% gate) | Low–Med | 3B roughly doubles tok/s vs 7B; streaming for perceived speed. |
-| African-language bonus not yet earned | Medium | Yorùbá speech pipeline planned (NLLB + MMS-TTS), lazy-loaded under the ceiling; validate before claiming +15%. |
-| Tool-call reliability on a small model | Medium | Strong tool-use prompt, action-routing gate, and a path safety-net reduce mis-fires. |
+| Peak RAM near 7 GB → OOM/DQ | **Resolved on 3B** | 7B measured 7.07 GB (over budget); switched to a 3B, measured **3.28 GB** peak RSS on dev hardware (§8). Re-measure on the ADTC Standard Laptop to confirm headroom before audit. |
+| Dev-machine benchmark numbers may not transfer 1:1 to audit hardware | Medium | §8's numbers are from a 22-core workstation, not the target 4–8 thread laptop. Re-run `sabi benchmark` and the official `adtc-profiler` on the real (or closest available) target profile before Gate 2. |
+| CPU tokens/sec vs smaller-model teams (30% gate) | Low–Med | 3B roughly doubles tok/s vs 7B; measured 18.93 tok/s avg on dev hardware; streaming for perceived speed. |
+| African-language bonus not claimed | Low (by design) | Deliberately not claimed for Gate 1 (§11) rather than risk an unsubstantiated claim. Yorùbá pipeline (NLLB + MMS-TTS) is a post-Gate-1 candidate. |
+| Tool-call reliability on a small model | **Resolved 2026-08-14** | Was confirmed 2026-08-13: `sabi agent "create a file main.py that prints hello"` reproducibly returned the code as plain text instead of the `write_file` JSON call. A temperature-only fix (0.4→0.1) was tried and was **not** sufficient — re-tested live and it still narrated prose. Fixed by switching the agent loop to `json_mode=True` (llama.cpp's `response_format: json_object` grammar), which structurally rules out prose replies: every turn must be either `{"tool": ..., "args": {...}}` or `{"final": "..."}`. Re-verified live: the exact repro case now creates the file every run (3/3), and the actual audit `test_prompt` #2 ("Scaffold a Python CLI project structure with argparse") now produces a real 6-file scaffold (`main.py`, `setup.py`, `requirements.txt`, `__init__.py`, `README.md`, `.gitignore`) with correct, runnable `argparse` code — this previously stopped early. A secondary issue surfaced during the fix — the model sometimes re-verifies a completed file/command redundantly instead of stopping — mitigated with an exact-repeat-call dedup guard in `AgentLoop.run` that force-terminates the loop rather than burning the step budget; a prompt-only nudge alone did not fully fix this either. |
 | Interface verified mainly headlessly during development | Low | Final pass on real 8 GB Ubuntu hardware before audit. |
 
 ---
 
 ## 14. Roadmap to final submission
 
-1. Run the profiler on the ADTC Standard Laptop; fill every `‹MEASURE›`.
-2. Confirm the **3B** stays comfortably under 7 GB on the audit machine
+1. ~~Fill in the real `team_id` in `metadata.json`~~ — done 2026-08-14
+   (`1054704`, DevPost submission ID for the "Sabi AI" project under
+   Africa Deep Tech Challenge 2026).
+2. Install Python 3.11+ and run the official
+   [`adtc-profiler`](https://github.com/Africa-Deep-Tech-Foundation/adtc-profiler)
+   on the ADTC Standard Laptop (or closest available equivalent); replace §8's
+   dev-machine numbers with audit-grade ones and enter Sperf/Seff on DevPost.
+3. Confirm the **3B** stays comfortably under 7 GB on the audit machine
    (re-run `benchmark`); keep 1.5B as a fallback if any team-specific tightness.
-3. Implement and validate **one African language** end-to-end → claim +15%.
-4. Record the 2-minute demo video; finalise the 10-slide defense deck.
+4. Capture screenshots/clips and record the 2-minute demo video; finalise the
+   10-slide defense deck.
 5. Tighten any UI spacing/behaviour found on real hardware.
+6. Decide, before Gate 2, whether to implement and validate one African
+   language end-to-end and flip `african_alpha_claim` to `true` with evidence —
+   or leave it honestly unclaimed.
 
 ---
 

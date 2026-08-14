@@ -137,19 +137,29 @@ class LLMModel:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         stop: Optional[List[str]] = None,
+        json_mode: bool = False,
     ) -> Generation:
-        """Multi-turn chat completion over a list of role/content messages."""
+        """Multi-turn chat completion over a list of role/content messages.
+
+        ``json_mode`` forces the backend's JSON-object grammar so the reply is
+        always syntactically valid JSON (used by the agent loop, where a small
+        model otherwise tends to narrate in prose instead of emitting a tool
+        call — see AgentLoop).
+        """
         if not self._loaded and not self.load():
             raise ModelUnavailable(self._load_error or "model not available")
 
         t0 = time.perf_counter()
-        result = self._llm.create_chat_completion(
+        kwargs = dict(
             messages=messages,
             max_tokens=max_tokens or self.config.max_tokens,
             temperature=self.config.temperature if temperature is None else temperature,
             top_p=self.config.top_p,
             stop=stop or [],
         )
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        result = self._llm.create_chat_completion(**kwargs)
         elapsed = time.perf_counter() - t0
 
         choice = result["choices"][0]["message"]["content"]

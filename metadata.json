@@ -1,0 +1,37 @@
+{
+  "team_id": "1054704",
+  "domain": "coding_assistants",
+  "language_scope": ["en"],
+  "african_alpha_claim": false,
+  "budget_laptop_claim": true,
+  "submitter": {
+    "name": "Godspower Uyanga",
+    "email": "godspoweruyanga2@gmail.com",
+    "github_handle": "GodspowerUyanga"
+  },
+  "cross_disciplinary_pairing": {
+    "discipline": "autonomous_ai_agents",
+    "load_bearing": true,
+    "description": "SABI's coding assistant is implemented as an agentic tool-use loop (plan -> propose tool -> permission gate -> execute -> verify) with permissioned filesystem and shell access, so code generation and autonomous action-taking are the same feature, not a bolt-on. The same agent that drafts an enterprise plan (THINK engine) can scaffold and build the project that implements it, on-device."
+  },
+  "test_prompts": [
+    {
+      "prompt_id": "tp_001",
+      "prompt": "Fix this Python: lst=[1,2,3]; print(lst[3]). Explain the bug."
+    },
+    {
+      "prompt_id": "tp_002",
+      "prompt": "Scaffold a Python CLI project structure with argparse."
+    }
+  ],
+  "model": {
+    "name": "sabi-3b (Qwen2.5-Coder-3B-Instruct base)",
+    "runtime": "llama.cpp",
+    "quantization": "GGUF Q4_K_M",
+    "parameters_estimate": "3B",
+    "packaging": "binary_bundle"
+  },
+  "_runtime": {
+    "model_path": "models/sabi-3b.Q4_K_M.gguf"
+  }
+}

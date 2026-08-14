@@ -219,6 +219,23 @@ def parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def parse_final(text: str) -> Optional[str]:
+    """Extract the answer text from a {"final": "..."} object, if present."""
+    candidates: List[str] = []
+    m = _FENCE.search(text)
+    if m:
+        candidates.append(m.group(1).strip())
+    candidates.append(text.strip())
+    for cand in candidates:
+        try:
+            obj = json.loads(cand)
+        except Exception:
+            continue
+        if isinstance(obj, dict) and "final" in obj:
+            return str(obj["final"])
+    return None
+
+
 # -------------------------------------------------------------------- result
 @dataclass
 class AgentResult:
@@ -350,11 +367,23 @@ class AgentLoop:
         messages += self.history
         messages.append({"role": "user", "content": request})
         result = AgentResult(ok=False)
+        # Small models sometimes keep "double checking" a completed task
+        # (re-reading/re-running the same file) instead of recognizing it's
+        # done. Track exact-repeat calls and force termination rather than
+        # burning the whole step budget on redundant verification.
+        seen_calls: set = set()
 
         for step in range(self.max_steps):
             self.reporter.thinking()
             try:
-                gen = self.model.chat(messages)
+                # json_mode forces the backend's JSON grammar so every reply is
+                # syntactically valid JSON — either a tool call or {"final": ...}.
+                # Low temperature keeps the choice of tool/args deterministic.
+                # (A plain low-temperature nudge was NOT enough on its own: the
+                # 3B model still narrated code as prose instead of emitting the
+                # write_file call — confirmed by live testing 2026-08-13/14.
+                # json_mode structurally rules that failure mode out.)
+                gen = self.model.chat(messages, temperature=0.1, json_mode=True)
             except ModelUnavailable as exc:
                 result.error = str(exc)
                 return result
@@ -365,15 +394,31 @@ class AgentLoop:
 
             call = parse_tool_call(gen.text)
             if not call:
+                final = parse_final(gen.text)
+                answer = final if final is not None else gen.text
                 result.ok = True
-                result.answer = gen.text
-                self.reporter.final(gen.text)
+                result.answer = answer
+                self.reporter.final(answer)
                 self._remember(request, result)
                 return result
 
             tool, args = call["tool"], call["args"]
             args = self._maybe_locate(tool, args, request)
             desc = self.executor.describe(tool, args)
+
+            signature = (tool, json.dumps(args, sort_keys=True))
+            if signature in seen_calls:
+                # Exact repeat of a call already made this run — the model is
+                # looping instead of finishing. Stop here rather than spend
+                # the rest of the step budget re-verifying the same thing.
+                result.ok = True
+                result.answer = ("Here is what I completed:\n" + "\n".join(result.actions)
+                                  if result.actions else "Nothing further to do.")
+                self.reporter.final(result.answer)
+                self._remember(request, result)
+                return result
+            seen_calls.add(signature)
+
             self.reporter.proposing(tool, desc)
 
             messages.append({"role": "assistant", "content": gen.text})
@@ -410,15 +455,22 @@ DEFAULT_AGENT_PROMPT = """You are SABI, an offline AI coding coworker. You CAN r
 in ANY programming language, create folders, run shell commands, and build whole \
 projects on this machine. You are a capable agent, not just a chat bot.
 
-Available tools (to use one, reply with ONLY a single JSON object, nothing else):
+EVERY reply you produce MUST be exactly one JSON object — nothing before it, nothing \
+after it, no markdown fences, no explanation text outside the JSON. There are only \
+two valid shapes:
+  1. A tool call:   {"tool": "<name>", "args": {...}}
+  2. A final answer: {"final": "<your plain-text answer, may include ```lang fenced code```>"}
+Never reply with bare prose or bare code — always wrap it in {"final": "..."}.
+
+Available tools:
 - create_dir(path)            create a folder
 - write_file(path, content)   create or overwrite a file (write complete, runnable code)
 - read_file(path)             read ANY file (PDF, Word, Excel, PowerPoint, CSV, HTML, JSON, images, code, text) and get its text
 - list_dir(path)              list a folder
 - run_shell(command)          run a shell command
 
-After a tool runs you receive its result, then call another tool or finish with a \
-short plain-text summary (no JSON).
+After a tool runs you receive its result as the next message, then reply with \
+another tool call or a {"final": ...} to finish.
 
 Path rules (IMPORTANT):
 - Always pass an ABSOLUTE path. "~" or {home} is the home directory.
@@ -434,14 +486,20 @@ Examples:
   {"tool": "write_file", "args": {"path": "{home}/Desktop/app/main.py", "content": "print('hello')"}}
 - "what's in my Documents folder?"
   {"tool": "list_dir", "args": {"path": "{home}/Documents"}}
+- "hi" / "what does this function do?" (no file action needed)
+  {"final": "Hello! ..."}
 
 Rules:
-- For greetings, questions, or explanations, reply in plain text — do NOT call a tool.
+- For greetings, questions, or explanations, use {"final": "..."} — do NOT call a tool.
 - NEVER say you cannot access files or folders. You CAN, via the tools above.
-- When asked to create / edit / read / open / go into / build something, DO it with tools.
-- Write complete, correct, runnable code. In prose, wrap code in fenced blocks with the \
-language, e.g. ```python ... ``` so it is highlighted.
-- One tool per reply. Keep going until the task is done.
+- When asked to create / edit / read / open / go into / build something, DO it with tools \
+instead of describing it in a {"final": ...}.
+- Write complete, correct, runnable code. Inside {"final": "..."}, wrap code in fenced \
+blocks with the language, e.g. ```python ... ``` so it is highlighted.
+- Exactly one JSON object per reply. Keep going until the task is done.
+- Do NOT re-read or re-run the same file more than once to "double check" it. One \
+verification pass (at most) after the last write is enough — as soon as the task is \
+verifiably complete, stop with {"final": "..."} instead of repeating tool calls.
 
 Current working directory: {cwd}
 Home directory: {home}

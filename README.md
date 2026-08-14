@@ -88,6 +88,12 @@ That's everything. The model downloads itself from Hugging Face into a new
 `models/` folder, so there's nothing to fetch by hand. (Skip `sabi download` if
 you like — the first `sabi run` offers to download it for you.)
 
+**ADTC 2026 audit note.** For the challenge's audit harness, use
+`./download_model.sh` instead of `sabi download` — same source, same
+destination (`models/sabi-3b.Q4_K_M.gguf`), but it's the plain, dependency-free
+entry point the [official submission template](https://github.com/Africa-Deep-Tech-Foundation/adtc-2026-submission-template)
+expects, and its path matches `_runtime.model_path` in [`metadata.json`](metadata.json).
+
 ---
 
 ## Installation, in detail
@@ -349,7 +355,8 @@ Targets: peak RAM **< 6.5 GB**, startup **< 5 s**, **10–20 tok/s**, core temp
 
 ```text
 sabi-llm/
-├── README.md  LICENSE  CHANGELOG.md  CONTRIBUTING.md
+├── metadata.json  download_model.sh   # ADTC 2026 submission template requirements
+├── README.md  REPORT.md  LICENSE  CHANGELOG.md  CONTRIBUTING.md
 ├── pyproject.toml  requirements.txt  Makefile
 ├── config/        default.yaml
 ├── prompts/       system / think / code / router / agent templates
@@ -397,9 +404,13 @@ make help                   # see all make targets
 
 ## African localization
 
-Planned support for **Yoruba, Hausa, Igbo** and other African languages
-(`SABI_LANGUAGE=yo|ha|ig`). Meaningful functionality in at least one African
-language is eligible for the ADTC African Alpha Bonus (+15%).
+A `SABI_LANGUAGE=yo|ha|ig` config key is reserved for **Yoruba, Hausa, Igbo**,
+but no localized prompts or translation layer exist yet, and live testing
+shows the base model's raw output in these languages is not reliably fluent —
+so end-to-end functionality is not demonstrably working, and SABI does **not**
+currently claim the ADTC African Alpha Bonus (+15%) — see `metadata.json`
+(`african_alpha_claim: false`) and REPORT.md §11. We'd rather ship this
+honestly unclaimed than risk an unsubstantiated claim failing audit.
 
 ---
 
