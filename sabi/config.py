@@ -33,9 +33,9 @@ PROJECT_ROOT = PACKAGE_ROOT.parent
 
 DEFAULTS: Dict[str, Any] = {
     # --- Model ---
-    "model_path": "models/sabi-3b.Q4_K_M.gguf",
-    "hf_repo_id": "Doctorgp1/sabi-v1",
-    "hf_filename": "sabi-3b.Q4_K_M.gguf",
+    "model_path": "models/sabi-v1.Q4_K_M.gguf",
+    "hf_repo_id": "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
+    "hf_filename": "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
     "hf_revision": "main",
     "context_length": 4096,
     "max_tokens": 1024,
@@ -56,6 +56,10 @@ DEFAULTS: Dict[str, Any] = {
     "ui": "terminal",        # "terminal" or "web"
     "language": "en",        # en, yo (Yoruba), ha (Hausa), ig (Igbo)
     "verbose": False,
+    # --- sabi-yoruba-tts (African Alpha Bonus): NLLB-200-distilled-600M,
+    # int8 CTranslate2. See scripts/download_yoruba_model.py and sabi/translate.py.
+    "yoruba_enabled": True,
+    "yoruba_model_path": "models/sabi-yoruba-tts",
 }
 
 
@@ -98,6 +102,8 @@ class Config:
     ui: str = DEFAULTS["ui"]
     language: str = DEFAULTS["language"]
     verbose: bool = DEFAULTS["verbose"]
+    yoruba_enabled: bool = DEFAULTS["yoruba_enabled"]
+    yoruba_model_path: str = DEFAULTS["yoruba_model_path"]
 
     # Absolute root the runtime operates from (set at load time).
     root: Path = field(default_factory=lambda: PROJECT_ROOT)
@@ -117,6 +123,9 @@ class Config:
 
     def abs_vector_store(self) -> Path:
         return self.abs_workspace() / self.vector_store_file
+
+    def abs_yoruba_model_path(self) -> Path:
+        return self._resolve(self.yoruba_model_path)
 
     def _resolve(self, p: str) -> Path:
         path = Path(p)

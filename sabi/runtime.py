@@ -23,6 +23,7 @@ from .tools import default_registry
 from .agent import AgentLoop, Reporter
 from .permissions import PermissionManager
 from . import project_scanner
+from . import translate
 
 
 class Runtime:
@@ -77,37 +78,69 @@ class Runtime:
         self._started = True
         return self
 
+    # ------------------------------------------------------- sabi-yoruba-tts
+    def _yoruba_status(self, text: str) -> str:
+        """'active' (translate this turn), 'unavailable' (wanted, not installed), or 'off'."""
+        if not self.config.yoruba_enabled or not translate.looks_like_yoruba(text):
+            return "off"
+        if translate.available(str(self.config.abs_yoruba_model_path())):
+            return "active"
+        return "unavailable"
+
+    def _to_english(self, text: str) -> str:
+        return translate.to_english(text, str(self.config.abs_yoruba_model_path()))
+
+    def _to_yoruba(self, text: str) -> str:
+        try:
+            return translate.to_yoruba(text, str(self.config.abs_yoruba_model_path()))
+        except Exception as exc:  # never break the reply over a translation failure
+            return text + f"\n\n_(Yoruba translation unavailable right now: {exc})_"
+
+    _YORUBA_UNAVAILABLE_NOTE = (
+        "\n\n_(sabi-yoruba-tts isn't installed yet, so this reply is in English — "
+        "run `python scripts/download_yoruba_model.py` to enable Yoruba.)_"
+    )
+
     # ------------------------------------------------------------- handling
     def handle(self, request: str, *, use_rag: bool = True) -> dict:
         """Route a request and run the appropriate engine. Returns a result dict."""
         if not self._started:
             self.start()
 
-        routing = self.router.route(request, self.prompts.get("router", ""))
-        context = self.retriever.context(request) if use_rag else ""
+        yoruba = self._yoruba_status(request)
+        effective_request = self._to_english(request) if yoruba == "active" else request
+
+        routing = self.router.route(effective_request, self.prompts.get("router", ""))
+        context = self.retriever.context(effective_request) if use_rag else ""
 
         self.memory.add_turn("user", request, routing.intent)
 
         result = {"intent": routing.intent, "confidence": routing.confidence,
-                  "reason": routing.reason, "context_used": bool(context)}
+                  "reason": routing.reason, "context_used": bool(context),
+                  "language": "yo" if yoruba != "off" else "en"}
 
         try:
             if routing.intent == CODE:
-                gen = self.code.run(request, context=context)
+                gen = self.code.run(effective_request, context=context)
             elif routing.intent == THINK:
-                gen = self.think.run(request, context=context)
+                gen = self.think.run(effective_request, context=context)
             else:  # CHAT - answer directly with the base model
                 gen = self.model.generate(
-                    request, system=self.prompts.get("system", "") or None
+                    effective_request, system=self.prompts.get("system", "") or None
                 )
+            text = gen.text
+            if yoruba == "active":
+                text = self._to_yoruba(text)
+            elif yoruba == "unavailable":
+                text += self._YORUBA_UNAVAILABLE_NOTE
             result.update({
                 "ok": True,
-                "text": gen.text,
+                "text": text,
                 "tps": round(gen.tokens_per_second, 2),
                 "tokens": gen.prompt_tokens + gen.completion_tokens,
                 "elapsed_s": round(gen.elapsed_s, 2),
             })
-            self.memory.add_turn("assistant", gen.text, routing.intent)
+            self.memory.add_turn("assistant", text, routing.intent)
             self.memory.add_task(request[:80], "done", routing.intent)
         except Exception as exc:  # noqa: BLE001 - surface as a clean message
             result.update({"ok": False, "text": "", "error": str(exc)})
@@ -139,11 +172,22 @@ class Runtime:
         """Run the agentic loop for a request and return a result dict."""
         if not self._started:
             self.start()
+        # Translate the natural-language request/reply only; tool-call JSON,
+        # file paths and code (`actions`) are never routed through translation.
+        yoruba = self._yoruba_status(request)
+        effective_request = self._to_english(request) if yoruba == "active" else request
+
         loop = self.make_agent(permissions=permissions, reporter=reporter, cwd=cwd)
-        context = self.retriever.context(request) if use_rag else ""
-        res = loop.run(request, context=context)
+        context = self.retriever.context(effective_request) if use_rag else ""
+        res = loop.run(effective_request, context=context)
+        answer = res.answer
         if res.ok:
+            if yoruba == "active":
+                answer = self._to_yoruba(answer)
+            elif yoruba == "unavailable":
+                answer += self._YORUBA_UNAVAILABLE_NOTE
             self.memory.add_turn("user", request, "AGENT")
-            self.memory.add_turn("assistant", res.answer, "AGENT")
+            self.memory.add_turn("assistant", answer, "AGENT")
             self.memory.add_task(request[:80], "done", "AGENT")
-        return {"ok": res.ok, "answer": res.answer, "actions": res.actions, "error": res.error}
+        return {"ok": res.ok, "answer": answer, "actions": res.actions, "error": res.error,
+                "language": "yo" if yoruba != "off" else "en"}

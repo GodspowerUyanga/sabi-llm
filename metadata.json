@@ -1,8 +1,8 @@
 {
   "team_id": "1054704",
   "domain": "coding_assistants",
-  "language_scope": ["en"],
-  "african_alpha_claim": false,
+  "language_scope": ["en", "yo"],
+  "african_alpha_claim": true,
   "budget_laptop_claim": true,
   "submitter": {
     "name": "Godspower Uyanga",
@@ -32,6 +32,6 @@
     "packaging": "binary_bundle"
   },
   "_runtime": {
-    "model_path": "models/sabi-3b.Q4_K_M.gguf"
+    "model_path": "models/sabi-v1.Q4_K_M.gguf"
   }
 }

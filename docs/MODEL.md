@@ -9,11 +9,11 @@ two ways to get it.
 
 ---
 
-## Path A — Fast: download a ready-made GGUF (recommended, ~4.68 GB)
+## Path A — Fast: download a ready-made GGUF (recommended, ~2.0 GB)
 
 Qwen already publishes pre-quantized GGUFs, so you can skip building llama.cpp.
 The cleanest way is SABI's own download script, which pulls **only** the single
-quantized file (~4.68 GB — not the 15 GB full model), renames it to your name,
+quantized file (~2.0 GB — not the 15 GB full model), renames it to your name,
 and cleans up so `models/` holds only that one file:
 
 ```bash
@@ -22,7 +22,7 @@ pip install "huggingface_hub[cli]"
 python scripts/download_model.py \
   --repo Qwen/Qwen2.5-Coder-3B-Instruct-GGUF \
   --file qwen2.5-coder-7b-instruct-q4_k_m.gguf
-# -> models/sabi-3b.Q4_K_M.gguf  (your configured name; nothing else added)
+# -> models/sabi-v1.Q4_K_M.gguf  (your configured name; nothing else added)
 
 sabi doctor    # verify
 sabi run
@@ -52,16 +52,16 @@ pip install "huggingface_hub[cli]"
 ./scripts/quantize_model.sh
 # or customise:
 ./scripts/quantize_model.sh --hf Qwen/Qwen2.5-Coder-3B-Instruct \
-                            --out sabi-3b.Q4_K_M.gguf --quant Q4_K_M
+                            --out sabi-v1.Q4_K_M.gguf --quant Q4_K_M
 ```
 
 This builds llama.cpp, downloads the base model, converts to FP16 GGUF,
-quantizes to Q4_K_M, smoke-tests it, and writes `models/sabi-3b.Q4_K_M.gguf`.
+quantizes to Q4_K_M, smoke-tests it, and writes `models/sabi-v1.Q4_K_M.gguf`.
 
 **It cleans up after itself.** The raw ~15 GB Qwen download and the FP16
 intermediate go into a hidden `.model-build/` scratch folder and are deleted at
 the end, so `models/` is left containing **only your one named file**
-(`sabi-3b.Q4_K_M.gguf`). Pass `--keep-src` if you'd rather keep the raw download
+(`sabi-v1.Q4_K_M.gguf`). Pass `--keep-src` if you'd rather keep the raw download
 to re-quantize at other levels without re-downloading.
 
 ### Manual (the same steps, by hand)
@@ -77,14 +77,14 @@ huggingface-cli download Qwen/Qwen2.5-Coder-3B-Instruct --local-dir models/qwen-
 
 # 3. Convert HF -> GGUF (FP16)
 python convert_hf_to_gguf.py models/qwen-src \
-  --outtype f16 --outfile models/sabi-3b.f16.gguf
+  --outtype f16 --outfile models/sabi-v1.f16.gguf
 
 # 4. Quantize -> Q4_K_M
 ./build/bin/llama-quantize \
-  models/sabi-3b.f16.gguf models/sabi-3b.Q4_K_M.gguf Q4_K_M
+  models/sabi-v1.f16.gguf models/sabi-v1.Q4_K_M.gguf Q4_K_M
 
 # 5. Test
-./build/bin/llama-cli -m models/sabi-3b.Q4_K_M.gguf -p "hello" -n 40
+./build/bin/llama-cli -m models/sabi-v1.Q4_K_M.gguf -p "hello" -n 40
 ```
 
 ---
@@ -97,7 +97,7 @@ through everything:
 - `--out <name>.gguf` on `scripts/quantize_model.sh`, **and**
 - `config/default.yaml` → `model_path` and `hf_filename`.
 
-The default is `sabi-3b.Q4_K_M.gguf`. To brand it differently (e.g.
+The default is `sabi-v1.Q4_K_M.gguf`. To brand it differently (e.g.
 `godspower-coder-v1.Q4_K_M.gguf`), build with:
 
 ```bash
@@ -119,7 +119,7 @@ Whatever name you pick, only that single file ends up in `models/`.
 
 | Quant | File size (3B) | Runtime RAM (4k ctx) | Verdict for ADTC |
 |-------|----------------|----------------------|------------------|
-| Q4_K_M | 4.68 GB | ~5.5–6.5 GB | ✅ recommended (tight but fits) |
+| Q4_K_M | ~2.0 GB | ~3.5–4.5 GB | ✅ recommended (comfortable) |
 | Q5_K_M | ~5.4 GB (often split into 2 files) | ~6.5–7+ GB | ⚠️ risky, may exceed ceiling |
 | Q8_0   | ~8.1 GB | well over 7 GB | ❌ too big |
 
@@ -128,7 +128,7 @@ smaller base model — the commands are identical:
 
 ```bash
 ./scripts/quantize_model.sh --hf Qwen/Qwen2.5-Coder-3B-Instruct \
-                            --out sabi-3b.Q4_K_M.gguf
+                            --out sabi-v1.Q4_K_M.gguf
 ```
 
 A 3B at Q4_K_M is ~2 GB and very comfortable under the ceiling.
@@ -140,7 +140,7 @@ A 3B at Q4_K_M is ~2 GB and very comfortable under the ceiling.
 ```bash
 huggingface-cli login
 huggingface-cli upload Doctorgp1/sabi-v1 \
-  models/sabi-3b.Q4_K_M.gguf sabi-3b.Q4_K_M.gguf
+  models/sabi-v1.Q4_K_M.gguf sabi-v1.Q4_K_M.gguf
 ```
 
 After uploading, anyone who clones the repo can fetch it with:

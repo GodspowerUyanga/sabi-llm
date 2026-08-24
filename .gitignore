@@ -1,7 +1,9 @@
 # Models (downloaded from Hugging Face, too large for Git)
-models/*.gguf
+*.gguf
 models/*.bin
 models/*.partial
+models/sabi-yoruba-tts/
+models/.hf_cache/
 
 # Model build scratch (llama.cpp checkout + raw downloads + fp16 intermediates)
 .llama.cpp/

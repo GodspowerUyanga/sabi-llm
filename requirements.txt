@@ -11,3 +11,10 @@ llama-cpp-python>=0.2.50
 
 # --- Model download from Hugging Face ---
 huggingface_hub>=0.20
+
+# --- sabi-yoruba-tts (African Alpha Bonus): int8 CTranslate2 + tokenizer ---
+# Runtime only; converting the model needs `torch` once (see
+# scripts/download_yoruba_model.py), not listed here since it's not needed
+# after conversion.
+ctranslate2>=4.0
+transformers>=4.30

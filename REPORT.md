@@ -8,22 +8,22 @@
 | **Primary track** | Coding Assistants |
 | **Cross-disciplinary integration** | Coding Assistant × Corporate/Enterprise × Autonomous AI Agents |
 | **Repository** | https://github.com/godspoweruyanga/sabi-llm |
-| **Model** | `sabi-3b.Q4_K_M.gguf` (quantized GGUF, runs via llama.cpp) — hosted at https://huggingface.co/Doctorgp1/sabi-v1 |
+| **Model** | Qwen2.5-Coder-3B-Instruct, Q4_K_M GGUF (~2.0 GB), runs via llama.cpp — sourced from Qwen's official repo (https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF); saved locally as `sabi-v1.Q4_K_M.gguf` |
 | **Target hardware** | ADTC Standard Laptop — 8 GB RAM, no discrete GPU, Ubuntu 22.04 |
 | **Memory ceiling** | 7 GB (hard limit; exceeding it = disqualification) |
 | **Authors** | Godspower Uyanga (lead) · Oreoluwa Akinwe |
 | **License** | MIT |
-| **Bonus claims** | Budget-laptop profile: **claimed** · African-language bonus: **not claimed** (see §11) |
+| **Bonus claims** | Budget-laptop profile: **claimed** · African-language bonus: **claimed** — Yoruba via sabi-yoruba-tts (see §11) |
 
 > **A note to reviewers on numbers.** The table in §8 is a real run of
-> `sabi benchmark` (our own profiler, wrapping the same llama.cpp CPU inference
-> path used at audit) on the development machine used to build SABI — **not**
-> the ADTC Standard Laptop, and not yet the official `adtc-profiler` audit tool.
-> We do not substitute estimates for measured telemetry anywhere in this report;
-> every number below came from an actual run, and every number is labelled with
-> the hardware it was measured on. We re-run both `sabi benchmark` and the
-> official `adtc-profiler` on the target 8 GB no-GPU profile before Gate 2 and
-> update this table with those figures.
+> `sabi benchmark` **and** the official `adtc-profiler` (both run 2026-08-25),
+> wrapping the same llama.cpp CPU inference path used at audit, on the
+> development machine used to build SABI — **not** the ADTC Standard Laptop
+> (see the profiler's own `environment` block below for the exact spec). We do
+> not substitute estimates for measured telemetry anywhere in this report;
+> every number below came from an actual run, and every number is labelled
+> with the hardware it was measured on. We re-run both tools on the target
+> 8 GB no-GPU profile before Gate 2 and update this table with those figures.
 
 ---
 
@@ -202,16 +202,26 @@ sabi profile                     # live RAM / CPU / temperature
 in `benchmarks/prompts.jsonl`** *(not the ADTC Standard Laptop; see caveat
 below the table):*
 
-| Metric | Target | Measured (dev machine) |
+| Metric | Target | Measured (dev machine, 2026-08-25) |
 |---|---|---|
-| Model size on disk | < 7 GB | **1.80 GB** |
-| Peak RAM (RSS) during inference | < 6.5 GB (well under 7 GB) | **3.28 GB** |
-| Efficiency score `Seff = 100×(7−PeakRAM)/7` | maximise | **53.1** |
-| Tokens/sec (CPU), avg across 8 prompts | 10–20 tok/s | **18.93 tok/s** |
+| Model size on disk | < 7 GB | **1.96 GB** (`sabi-v1.Q4_K_M.gguf`, Qwen2.5-Coder-3B-Instruct Q4_K_M — verified against the file actually downloaded by `download_model.sh`) |
+| Peak RAM (RSS) during inference | < 6.5 GB (well under 7 GB) | **3.45 GB** |
+| Efficiency score `Seff = 100×(7−PeakRAM)/7` | maximise | **50.8** |
+| Tokens/sec (CPU), avg across 8 prompts | 10–20 tok/s | **17.42 tok/s** |
 | Cold start (load → first token) | < 5 s | not separately instrumented by `sabi benchmark`; to be measured on audit hardware |
 | Peak core temperature / thermal throttle | < 85 °C (avoid −10) | **throttle flag tripped** — see caveat |
-| Benchmark accuracy (prompt set, keyword-match heuristic) | maximise | **78.1%** |
+| Benchmark accuracy (prompt set, keyword-match heuristic) | maximise | **71.9%** |
 | Crashes / OOM | 0 | **0** |
+
+> **2026-08-25 re-measurement note.** These numbers replace an earlier table
+> measured against a mismatched model file (claimed 1.80 GB; the file actually
+> referenced by `download_model.sh` at the time 404'd, and our own
+> `Doctorgp1/sabi-v1` HF upload turned out to be a stale 7B build at 4.68 GB —
+> see §6 and §13). `download_model.sh` now sources the verified
+> `Qwen/Qwen2.5-Coder-3B-Instruct-GGUF` file directly (2,104,932,800 bytes
+> confirmed via the HF API), and every number above was re-measured against
+> that exact file with `sabi doctor` + `sabi benchmark` +
+> `python scripts/run_benchmark.py` on 2026-08-25.
 
 > **Hardware caveat.** This run was on the development workstation (22 logical
 > cores, sustained package temps of 90+ °C under load from unrelated processes),
@@ -229,6 +239,32 @@ below the table):*
 > prompt set lives in `benchmarks/prompts.jsonl`. Per-prompt breakdown (tps /
 > accuracy / elapsed) is in `benchmarks/report.json` after running
 > `python scripts/run_benchmark.py`.
+
+**Official `adtc-profiler` results (participant mode, 2026-08-25):**
+
+```bash
+adtc-profiler run --submission . --mode participant --output submission.json --skip-accuracy
+```
+
+| Field (from `submission.json`) | Value |
+|---|---|
+| `environment.measured_on` | **`participant_laptop`** |
+| `environment.cpu_model` | Intel(R) Core(TM) Ultra 7 165H (dev laptop — not the ADTC Standard Laptop's i5 10th–12th gen) |
+| `environment.ram_gb` | 30.8 |
+| `throughput.tokens_per_second_generation` | **19.36** |
+| `throughput.first_token_latency_ms` | 8347.54 |
+| `memory.peak_rss_mb` | **3453.76** (3.37 GB) |
+| `memory.steady_state_rss_mb` | 3372.75 |
+| `cpu_thermal.core_temp_c_peak` | 102.0 °C — `throttled: true` (dev-machine artifact, see caveat above) |
+| `model_info.params_count` | 3,397,103,616 |
+| `model_info.claimed_params_estimate` / `params_match` | `"3B"` / **`true`** — independently confirms this is genuinely the 3B build, not the mismatched 4.68 GB file `Doctorgp1/sabi-v1` previously held (§6, §13) |
+| `reproducibility.git_commit_sha` | `f5fe9ce58b63` |
+
+These figures corroborate `sabi benchmark`'s numbers (same peak RAM to within
+~80 MB, tok/s within ~2). `accuracy` is empty because this run used
+`--skip-accuracy`; the DevPost self-reported Sperf/Seff fields and a full
+accuracy pass are still pending an actual ADTC Standard Laptop run before
+Gate 2.
 
 ---
 
@@ -267,18 +303,39 @@ they are what the repo's machine-readable submission record says.
 - **Budget-laptop profile (+10%): claimed** (`budget_laptop_claim: true`).
   SABI is designed and tested for the $150–$500, 8 GB, no-GPU machine and
   reports its footprint against the budget (§8, §10).
-- **African-language bonus (+15%): not claimed** (`african_alpha_claim: false`).
-  The architecture reserves a `SABI_LANGUAGE` config key (`en|yo|ha|ig`) for
-  this, but no localized prompts or translation layer exist yet, and live
-  testing (2026-08-14) shows the base model's raw Yoruba output is degenerate/
-  repetitive, not real fluency — the base model was not trained for African
-  languages. Meaningful end-to-end functionality is not demonstrably working.
-  We would rather ship Gate 1 honestly at a lower multiplier than have an
-  unsubstantiated claim fail the Gate 2 audit. Real support would need a local
-  translation layer (e.g. an NLLB model wrapping the existing pipeline), which
-  is a scoped follow-up, not a same-session fix. If we finish it before
-  Gate 2, we will flip this flag and add evidence (sample transcripts) — not
-  before.
+- **African-language bonus (+15%): claimed** (`african_alpha_claim: true`,
+  `language_scope: ["en", "yo"]`). Live testing (2026-08-14) showed the base
+  model's raw Yoruba output was degenerate/repetitive — Qwen2.5-Coder-3B was
+  never trained for Yoruba, so we did not ship a same-session prompt hack for
+  it. Instead we added **sabi-yoruba-tts**, a dedicated translation layer
+  (`sabi/translate.py`) around the same English-speaking model: a Yoruba turn
+  is translated to English (`Runtime._to_english`), routed and answered
+  exactly like any other request, then the English reply is translated back
+  to Yoruba (`Runtime._to_yoruba`) before it reaches the user — wired into
+  both `Runtime.handle()` and `Runtime.agent()`. Backend: Meta's
+  `facebook/nllb-200-distilled-600M` (NLLB-200), converted once to int8
+  CTranslate2 via `scripts/download_yoruba_model.py` (`ctranslate2` +
+  `transformers` at runtime; no `torch` needed after conversion). Fenced code
+  blocks are never sent through the translator (`_CODE_FENCE_RE` in
+  `translate.py`), so code explained in Yoruba still contains real, runnable
+  code — verified directly:
+
+  ```text
+  >>> to_english("Ṣe o le ràn mí lọ́wọ́ pẹ̀lú kóòdù yìí?")
+  "Can you help me with this code?"
+  >>> to_yoruba("Here is a fix:\n\n```python\nprint(1)\n```\n\nDone.")
+  "Ọ̀nà kan ni pé:\n\n```python\nprint(1)\n```\n\nA ti ṣe é."
+  ```
+
+  **License disclosure.** NLLB-200-distilled-600M is **CC-BY-NC-4.0
+  (non-commercial)** — unlike the rest of SABI (MIT). This is appropriate for
+  a non-commercial hackathon submission; a different translation model would
+  be needed before any commercial use. Detection heuristic
+  (`translate.looks_like_yoruba`): Yoruba diacritics (ẹ ọ ṣ etc.) or common
+  romanized marker words (bawo, jowo, pele, ...) typed without diacritics.
+  Model adds ~635 MB resident when loaded (lazy, first Yoruba turn only) —
+  see §10 for how this stays under the 7 GB ceiling alongside the ~3.5–4.5 GB
+  runtime footprint of the 3B coder model.
 
 ---
 
@@ -294,8 +351,8 @@ cd sabi-llm
 python3 -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
 pip install -e ".[tui,serve,inference]"
-./download_model.sh    # audit-harness entry point: fetches the model (~1.8 GB)
-                        # into ./models/sabi-3b.Q4_K_M.gguf — matches
+./download_model.sh    # audit-harness entry point: fetches the model (~2.0 GB)
+                        # into ./models/sabi-v1.Q4_K_M.gguf — matches
                         # _runtime.model_path in metadata.json
 # or: sabi download     # equivalent, human-friendly CLI entry point
 sabi doctor             # verify environment + size vs 7 GB budget
@@ -308,9 +365,9 @@ sabi run                # launch the coworker
   pairing, and the two visible test prompts, per the official
   [ADTC 2026 submission template](https://github.com/Africa-Deep-Tech-Foundation/adtc-2026-submission-template).
 - `download_model.sh` (repo root) is the audit-harness-facing download script;
-  it and `metadata.json._runtime.model_path` agree on `models/sabi-3b.Q4_K_M.gguf`.
+  it and `metadata.json._runtime.model_path` agree on `models/sabi-v1.Q4_K_M.gguf`.
 - Config is in `config/default.yaml`, overridable via `SABI_*` env vars.
-- Model source is pinned (`Doctorgp1/sabi-v1`, `sabi-3b.Q4_K_M.gguf`).
+- Model source is pinned (`Qwen/Qwen2.5-Coder-3B-Instruct-GGUF`, `qwen2.5-coder-3b-instruct-q4_k_m.gguf`, saved locally as `sabi-v1.Q4_K_M.gguf`).
 - The test suite covers routing, permissions, agent file operations, RAG,
   memory, the web server, and the TUI (headless).
 
@@ -320,10 +377,11 @@ sabi run                # launch the coworker
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Peak RAM near 7 GB → OOM/DQ | **Resolved on 3B** | 7B measured 7.07 GB (over budget); switched to a 3B, measured **3.28 GB** peak RSS on dev hardware (§8). Re-measure on the ADTC Standard Laptop to confirm headroom before audit. |
+| Peak RAM near 7 GB → OOM/DQ | **Resolved on 3B** | 7B measured 7.07 GB (over budget); switched to a 3B, measured **3.45 GB** peak RSS on dev hardware (§8). Re-measure on the ADTC Standard Laptop to confirm headroom before audit. |
 | Dev-machine benchmark numbers may not transfer 1:1 to audit hardware | Medium | §8's numbers are from a 22-core workstation, not the target 4–8 thread laptop. Re-run `sabi benchmark` and the official `adtc-profiler` on the real (or closest available) target profile before Gate 2. |
-| CPU tokens/sec vs smaller-model teams (30% gate) | Low–Med | 3B roughly doubles tok/s vs 7B; measured 18.93 tok/s avg on dev hardware; streaming for perceived speed. |
-| African-language bonus not claimed | Low (by design) | Deliberately not claimed for Gate 1 (§11) rather than risk an unsubstantiated claim. Yorùbá pipeline (NLLB + MMS-TTS) is a post-Gate-1 candidate. |
+| CPU tokens/sec vs smaller-model teams (30% gate) | Low–Med | 3B roughly doubles tok/s vs 7B; measured 17.42 tok/s avg on dev hardware; streaming for perceived speed. |
+| sabi-yoruba-tts (NLLB-200) is CC-BY-NC-4.0, not MIT like the rest of SABI | Low, disclosed | Non-commercial license is appropriate for this non-commercial hackathon submission — disclosed in §11 rather than hidden. Would need a different translation model before any commercial use. |
+| Combined resident footprint (3B coder model + Yoruba layer) vs 7 GB | Low | ~3.5–4.5 GB (coder, §8) + ~635 MB (NLLB int8, lazy-loaded only on a Yoruba turn) — real headroom under 7 GB even summed worst-case. Re-confirm on the ADTC Standard Laptop before Gate 2. |
 | Tool-call reliability on a small model | **Resolved 2026-08-14** | Was confirmed 2026-08-13: `sabi agent "create a file main.py that prints hello"` reproducibly returned the code as plain text instead of the `write_file` JSON call. A temperature-only fix (0.4→0.1) was tried and was **not** sufficient — re-tested live and it still narrated prose. Fixed by switching the agent loop to `json_mode=True` (llama.cpp's `response_format: json_object` grammar), which structurally rules out prose replies: every turn must be either `{"tool": ..., "args": {...}}` or `{"final": "..."}`. Re-verified live: the exact repro case now creates the file every run (3/3), and the actual audit `test_prompt` #2 ("Scaffold a Python CLI project structure with argparse") now produces a real 6-file scaffold (`main.py`, `setup.py`, `requirements.txt`, `__init__.py`, `README.md`, `.gitignore`) with correct, runnable `argparse` code — this previously stopped early. A secondary issue surfaced during the fix — the model sometimes re-verifies a completed file/command redundantly instead of stopping — mitigated with an exact-repeat-call dedup guard in `AgentLoop.run` that force-terminates the loop rather than burning the step budget; a prompt-only nudge alone did not fully fix this either. |
 | Interface verified mainly headlessly during development | Low | Final pass on real 8 GB Ubuntu hardware before audit. |
 
@@ -343,9 +401,11 @@ sabi run                # launch the coworker
 4. Capture screenshots/clips and record the 2-minute demo video; finalise the
    10-slide defense deck.
 5. Tighten any UI spacing/behaviour found on real hardware.
-6. Decide, before Gate 2, whether to implement and validate one African
-   language end-to-end and flip `african_alpha_claim` to `true` with evidence —
-   or leave it honestly unclaimed.
+6. ~~Implement and validate Yoruba end-to-end, flip `african_alpha_claim`~~ —
+   done 2026-08-24: sabi-yoruba-tts (NLLB-200 int8) wired into
+   `Runtime.handle()`/`Runtime.agent()`, verified round-trip including
+   code-fence preservation (§11). Re-confirm the combined RAM footprint on the
+   ADTC Standard Laptop before Gate 2.
 
 ---
 

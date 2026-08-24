@@ -7,7 +7,7 @@
 # Usage:
 #   ./scripts/quantize_model.sh
 #   ./scripts/quantize_model.sh --hf Qwen/Qwen2.5-Coder-3B-Instruct \
-#                               --out sabi-3b.Q4_K_M.gguf --quant Q4_K_M
+#                               --out sabi-v1.Q4_K_M.gguf --quant Q4_K_M
 #   ./scripts/quantize_model.sh --keep-src      # keep the raw download to re-quantize later
 #
 # Result:  models/<your-out-name>.gguf   (nothing else added to models/)
@@ -27,7 +27,7 @@ set -euo pipefail
 
 # ---- Defaults ----
 HF_MODEL="Qwen/Qwen2.5-Coder-3B-Instruct"
-OUT_NAME="sabi-3b.Q4_K_M.gguf"
+OUT_NAME="sabi-v1.Q4_K_M.gguf"
 QUANT="Q4_K_M"
 KEEP_SRC=0
 LLAMA_DIR=".llama.cpp"          # hidden build dir (not inside models/)

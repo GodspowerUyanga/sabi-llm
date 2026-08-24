@@ -90,7 +90,7 @@ you like — the first `sabi run` offers to download it for you.)
 
 **ADTC 2026 audit note.** For the challenge's audit harness, use
 `./download_model.sh` instead of `sabi download` — same source, same
-destination (`models/sabi-3b.Q4_K_M.gguf`), but it's the plain, dependency-free
+destination (`models/sabi-v1.Q4_K_M.gguf`), but it's the plain, dependency-free
 entry point the [official submission template](https://github.com/Africa-Deep-Tech-Foundation/adtc-2026-submission-template)
 expects, and its path matches `_runtime.model_path` in [`metadata.json`](metadata.json).
 
@@ -157,11 +157,17 @@ it downloads on demand into `models/`. You don't need a Hugging Face account.
 sabi download
 ```
 
-This streams `sabi-3b.Q4_K_M.gguf` from
-[`Doctorgp1/sabi-v1`](https://huggingface.co/Doctorgp1/sabi-v1) directly, with a
+This streams `qwen2.5-coder-3b-instruct-q4_k_m.gguf` from Qwen's official
+[`Qwen/Qwen2.5-Coder-3B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF)
+repo (verified 2.0 GB), saving it locally as `models/sabi-v1.Q4_K_M.gguf`, with a
 progress bar, and creates the `models/` folder automatically. You can also just
 start SABI — the first `sabi run` / `sabi chat` / `sabi tui` will offer to
 download it for you.
+
+> Our own `Doctorgp1/sabi-v1` Hugging Face repo currently still holds an older
+> 7B build (4.68 GB, 7.07 GB peak RAM — over the 7 GB ceiling). We source
+> directly from Qwen's repo for now; the maintainer note below covers
+> re-quantizing and uploading our own 3B copy before Gate 2.
 
 Verify it's ready (and see its size vs the 7 GB budget):
 
@@ -173,29 +179,32 @@ Want to build your own quantized model from scratch, or use a different one? See
 **[docs/MODEL.md](docs/MODEL.md)**.
 
 > **Maintainers: building & uploading the 3B model.** SABI is configured for a
-> **3B** GGUF (`sabi-3b.Q4_K_M.gguf`) to stay well under the 7 GB ceiling. To
+> **3B** GGUF (`sabi-v1.Q4_K_M.gguf`) to stay well under the 7 GB ceiling. To
 > produce and publish it to the Hugging Face repo SABI downloads from:
 >
 > ```bash
 > # 1) Build the 3B GGUF locally (needs build tools; see docs/MODEL.md)
 > ./scripts/quantize_model.sh \
 >     --hf Qwen/Qwen2.5-Coder-3B-Instruct \
->     --out sabi-3b.Q4_K_M.gguf --quant Q4_K_M
-> #   -> models/sabi-3b.Q4_K_M.gguf  (~2 GB)
+>     --out sabi-v1.Q4_K_M.gguf --quant Q4_K_M
+> #   -> models/sabi-v1.Q4_K_M.gguf  (~2 GB)
 >
 > # 2) Upload it to your Hugging Face repo (public)
 > pip install "huggingface_hub[cli]"
 > huggingface-cli login
 > huggingface-cli upload Doctorgp1/sabi-v1 \
->     models/sabi-3b.Q4_K_M.gguf sabi-3b.Q4_K_M.gguf
+>     models/sabi-v1.Q4_K_M.gguf sabi-v1.Q4_K_M.gguf
 >
 > # 3) Verify the runtime footprint on the target laptop
 > sabi doctor && sabi benchmark
 > ```
 >
-> Until the 3B file exists in the repo, `sabi download` will report a 404 — that
-> is expected; build and upload it first. (The previous 7B file measured
-> 7.07 GB peak RAM — over budget — which is why SABI now targets the 3B.)
+> Until this 3B file is uploaded to our own repo, `sabi download` and
+> `download_model.sh` source directly from Qwen's official
+> `Qwen/Qwen2.5-Coder-3B-Instruct-GGUF` repo instead (see `config/default.yaml`
+> → `hf_repo_id`/`hf_filename`) — this is a fully public, credential-free
+> source, so it satisfies the ADTC audit requirements as-is. Uploading our own
+> copy to `Doctorgp1/sabi-v1` is a nice-to-have before Gate 2, not a blocker.
 
 ---
 
@@ -292,9 +301,9 @@ environment variable named `SABI_<KEY>` (uppercase), or copy `.env.example` to
 `.env`.
 
 ```bash
-SABI_MODEL_PATH=models/sabi-3b.Q4_K_M.gguf
-SABI_HF_REPO_ID=Doctorgp1/sabi-v1
-SABI_HF_FILENAME=sabi-3b.Q4_K_M.gguf
+SABI_MODEL_PATH=models/sabi-v1.Q4_K_M.gguf
+SABI_HF_REPO_ID=Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
+SABI_HF_FILENAME=qwen2.5-coder-3b-instruct-q4_k_m.gguf
 SABI_TEMPERATURE=0.4
 SABI_CONTEXT_LENGTH=4096
 SABI_N_THREADS=0        # 0 = auto (use all physical cores)
@@ -404,13 +413,21 @@ make help                   # see all make targets
 
 ## African localization
 
-A `SABI_LANGUAGE=yo|ha|ig` config key is reserved for **Yoruba, Hausa, Igbo**,
-but no localized prompts or translation layer exist yet, and live testing
-shows the base model's raw output in these languages is not reliably fluent —
-so end-to-end functionality is not demonstrably working, and SABI does **not**
-currently claim the ADTC African Alpha Bonus (+15%) — see `metadata.json`
-(`african_alpha_claim: false`) and REPORT.md §11. We'd rather ship this
-honestly unclaimed than risk an unsubstantiated claim failing audit.
+SABI's base model (Qwen2.5-Coder-3B-Instruct) was never trained for Yoruba —
+live testing showed its raw Yoruba output was degenerate, not fluent. Instead
+of a prompt hack, SABI ships **sabi-yoruba-tts**: a dedicated English<->Yoruba
+translation layer (`sabi/translate.py`, NLLB-200-distilled-600M as int8
+CTranslate2) wrapped around the same coder model. A Yoruba turn is translated
+to English, routed and answered normally, then the reply is translated back
+to Yoruba — with fenced code blocks always left untouched, so code explained
+in Yoruba is still real, runnable code. See `scripts/download_yoruba_model.py`
+to fetch/convert the model, and REPORT.md §11 for verified examples and the
+CC-BY-NC-4.0 license disclosure (non-commercial — unlike the rest of SABI's
+MIT license). SABI claims the ADTC African Alpha Bonus (+15%) —
+`metadata.json` (`african_alpha_claim: true`, `language_scope: ["en", "yo"]`).
+
+`SABI_LANGUAGE=ha|ig` (Hausa, Igbo) remain reserved config values without an
+implementation yet — a candidate for post-Gate-1 work.
 
 ---
 

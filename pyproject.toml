@@ -45,10 +45,12 @@ tui = ["textual>=0.60"]
 # Read PDFs, Word, Excel, PowerPoint, HTML, images, etc.
 docs = ["pypdf>=4.0", "python-docx>=1.1", "openpyxl>=3.1", "python-pptx>=0.6",
         "beautifulsoup4>=4.12"]
+# sabi-yoruba-tts (African Alpha Bonus): English<->Yoruba translation layer.
+translate = ["ctranslate2>=4.0", "transformers>=4.30"]
 # Development / testing.
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1", "flask>=3.0", "textual>=0.60",
        "pytest-asyncio>=0.23", "pypdf>=4.0", "python-docx>=1.1", "openpyxl>=3.1",
-       "python-pptx>=0.6", "beautifulsoup4>=4.12"]
+       "python-pptx>=0.6", "beautifulsoup4>=4.12", "ctranslate2>=4.0", "transformers>=4.30"]
 
 [project.urls]
 Homepage = "https://github.com/godspoweruyanga/sabi-llm"
