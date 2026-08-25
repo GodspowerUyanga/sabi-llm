@@ -96,6 +96,29 @@ def test_executor_blocks_dangerous_shell(tmp_path):
     assert "safety" in msg.lower()
 
 
+def test_executor_blocks_deletion_commands(tmp_path):
+    # Regression test for a real incident: after finishing an unrelated task,
+    # the model deleted the very file it had just created via run_shell +
+    # rm, when nobody asked it to delete anything. Deletion has no supported
+    # tool by design; this closes the run_shell workaround at the code level.
+    (tmp_path / "keep.txt").write_text("data")
+    ex = ToolExecutor(cwd=tmp_path)
+    for cmd in ["rm keep.txt", "rm -f keep.txt", "rmdir sub", "del keep.txt",
+                "cd /tmp && rm keep.txt", "echo hi; rm keep.txt"]:
+        ok, msg = ex.execute("run_shell", {"command": cmd})
+        assert not ok, cmd
+        assert "safety" in msg.lower(), cmd
+    assert (tmp_path / "keep.txt").exists()
+
+
+def test_executor_does_not_block_unrelated_words(tmp_path):
+    # The deletion-command regex must not misfire on words that merely
+    # contain "rm" as a substring (confirm, warm, term, ...).
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("run_shell", {"command": "echo confirm the warm term"})
+    assert ok, msg
+
+
 def test_executor_search_finds_match_across_subdirs(tmp_path):
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "a.py").write_text("def calculate_total():\n    return 1\n")

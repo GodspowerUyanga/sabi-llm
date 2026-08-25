@@ -35,6 +35,16 @@ _SHELL_DENY = (
     "> /dev/sd", "chmod -r 777 /", "mkfs.",
 )
 
+# Deletion is deliberately not a supported agent action — there is no
+# delete_file/delete_dir tool by design, and this blocks the obvious
+# workaround (routing a delete through run_shell) at the code level too, not
+# just via the system prompt. Learned from a real incident: the model was
+# once told via the prompt that it *could* delete through run_shell "if
+# needed", and used that unprompted to delete a file it had just created
+# after finishing an unrelated task. \b...\b keeps this from matching inside
+# unrelated words ("confirm", "warm", "term").
+_DELETE_CMD_RE = re.compile(r"\b(rm|rmdir|del|unlink|shred)\b", re.IGNORECASE)
+
 # Directories skipped when walking a codebase for search/tree — build
 # artifacts, VCS internals and dependency trees are noise and can be huge.
 _WALK_SKIP_DIRS = {
@@ -168,6 +178,11 @@ class ToolExecutor:
                 for bad in _SHELL_DENY:
                     if bad in low:
                         return False, f"Blocked by safety policy: '{bad.strip()}'"
+                if _DELETE_CMD_RE.search(cmd):
+                    return False, ("Blocked by safety policy: deletion commands (rm/rmdir/del/"
+                                    "unlink/shred) are not permitted through run_shell. If the "
+                                    "user explicitly asked to delete something, tell them to do "
+                                    "it themselves — do not work around this block.")
                 proc = subprocess.run(cmd, shell=True, cwd=str(self.cwd),
                                       capture_output=True, text=True, timeout=120)
                 out = ((proc.stdout or "") + (proc.stderr or "")).strip()
@@ -592,6 +607,23 @@ erases everything else in it.
 
 After a tool runs you receive its result as the next message, then reply with \
 another tool call or a {"final": ...} to finish.
+
+No-deletion rule (IMPORTANT, no exceptions): never delete, remove, or overwrite-to-empty \
+anything — not a file you just created, not one that already existed, not a whole directory — \
+unless the user's message explicitly names that exact thing and asks you to delete/remove it. \
+Finishing a task never implies cleaning up after it. This applies to every tool AND to \
+run_shell: do not run rm, rmdir, del, or any other removal command as a "cleanup" or \
+"verification" step (run_shell blocks these outright regardless). A completed task that \
+leaves the files it created in place is correct; deleting them afterward is a bug, not \
+tidiness — this has actually happened once and destroyed real work, so treat it as a hard \
+boundary.
+
+Small talk (IMPORTANT, no exceptions): for a bare greeting or pleasantry with no task in it \
+("hello", "hi", "thanks", "how are you") — your ONLY valid reply is {"final": "..."} with a \
+short conversational response. Never call a tool for one of these. A small model calling a \
+tool on a message like this has, in practice, resulted in an invented or unprompted \
+destructive action on real files — treat any message that is just one word or a two-word \
+pleasantry as having no task in it.
 
 Path rules (IMPORTANT):
 - Always pass an ABSOLUTE path. "~" or {home} is the home directory.

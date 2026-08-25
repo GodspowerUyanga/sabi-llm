@@ -23,6 +23,39 @@ THINK = "THINK"
 CODE = "CODE"
 CHAT = "CHAT"
 
+# Deliberately an ALLOWLIST of unambiguous small talk, not a keyword search for
+# "no action words present" — the latter is exactly the heuristic that used to
+# gate the agent loop and got removed for misclassifying natural action
+# phrasing ("in the app folder you made, add a file" has no obvious verb
+# either). An allowlist only ever pulls out messages nobody would phrase a
+# real request as, so it can't reintroduce that false-negative problem: it
+# has zero effect on "create a file", "fix this bug", etc. This exists
+# because a bare greeting like "hello" was observed reaching the tool-calling
+# agent loop and, on a small model, resulting in an invented, executed tool
+# call that corrupted real repository files — a plain-text CHAT reply carries
+# no such risk, so this check is a hard gate in code, not just a prompt rule.
+_SMALLTALK = {
+    "hi", "hello", "hey", "hiya", "yo", "sup", "greetings",
+    "good morning", "good afternoon", "good evening", "good night",
+    "how are you", "how are you doing", "how's it going", "hows it going",
+    "what's up", "whats up",
+    "thanks", "thank you", "thx", "ty", "cheers",
+    "ok", "okay", "cool", "nice", "great", "awesome", "got it",
+    "bye", "goodbye", "see you", "later",
+}
+
+
+def is_smalltalk(text: str) -> bool:
+    """True only for unambiguous greetings/pleasantries with no task content.
+
+    Exact-match against a fixed allowlist (after trimming punctuation/case) —
+    not a substring or keyword match — so "hi, can you create a file" does
+    NOT match: the moment a message carries any other content, this returns
+    False and the normal agent/router path handles it.
+    """
+    t = re.sub(r"[!.?]+$", "", (text or "").strip().lower())
+    return t in _SMALLTALK
+
 _CODE_HINTS = [
     "code", "function", "class", "bug", "debug", "error", "traceback",
     "implement", "refactor", "compile", "script", "api", "endpoint",

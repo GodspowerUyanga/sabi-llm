@@ -32,6 +32,7 @@ except Exception:  # pragma: no cover
 from ..runtime import Runtime
 from ..permissions import PermissionManager, Decision
 from ..agent import Reporter
+from ..router import is_smalltalk
 
 
 def textual_available() -> bool:
@@ -358,18 +359,43 @@ if _HAS_TEXTUAL:
         # ---------------------------------------------------------- worker
         @work(thread=True, exclusive=True)
         def process(self, message: str) -> None:
-            # Every message goes through the agent loop — the model itself
-            # decides tool-call vs plain answer each turn (see agent.py's
-            # {"final": ...} shape), so a greeting still answers instantly in
-            # prose while "fix the login bug" acts, regardless of exact
-            # phrasing. A keyword gate used to sit here and pick between a
-            # chat-only fast path and this loop; it misclassified natural
-            # phrasing often enough (only reliable with exact tool-name-ish
-            # wording) that it was removed rather than patched further.
-            self._run_action(message)
+            # Nearly every message goes through the agent loop — the model
+            # itself decides tool-call vs plain answer each turn (see
+            # agent.py's {"final": ...} shape), so "fix the login bug" acts
+            # regardless of exact phrasing. A keyword gate used to sit here
+            # and pick between a chat-only fast path and this loop; it
+            # misclassified natural phrasing often enough (only reliable
+            # with exact tool-name-ish wording) that it was removed rather
+            # than patched further.
+            #
+            # The one exception is unambiguous small talk ("hello", "thanks"):
+            # trusting a small model to always reply {"final": ...} for these
+            # rather than inventing a tool call was found to fail in
+            # practice — a bare "hello" reached the tool loop and resulted in
+            # an invented, executed tool call that corrupted real files. That
+            # has zero acceptable blast radius, so it's a hard code gate
+            # (sabi.router.is_smalltalk), not just a prompt instruction.
+            if is_smalltalk(message):
+                self._run_chat(message)
+            else:
+                self._run_action(message)
             self._busy = False
             self.call_from_thread(self._refresh_side)
             self.call_from_thread(self._set_status, "ready")
+
+        def _run_chat(self, message: str) -> None:
+            self.call_from_thread(self.activity_reset)
+            try:
+                res = self.rt.handle(message, use_rag=False)
+            except Exception as exc:  # noqa: BLE001
+                self.call_from_thread(self._mount_sabi, f"⚠ {exc}"); return
+            if not res.get("ok"):
+                self.call_from_thread(self._mount_sabi, f"⚠ {res.get('error', 'error')}"); return
+            self.total_tokens += res.get("tokens", 0)
+            self.last_turn_tokens = res.get("tokens", 0)
+            self.call_from_thread(self._mount_sabi, res.get("text") or "Hi!")
+            self.call_from_thread(self._mount_meta,
+                                  f"{res.get('tokens', 0):,} tokens · {res.get('elapsed_s', 0):.1f}s · chat")
 
         def _run_action(self, message: str) -> None:
             self.call_from_thread(self.activity_reset)

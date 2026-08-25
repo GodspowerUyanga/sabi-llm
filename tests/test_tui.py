@@ -96,17 +96,30 @@ def test_tui_importable_without_textual(monkeypatch):
     assert tui.textual_available() in (True, False)
 
 
-def test_tui_process_always_uses_agent_loop_regardless_of_phrasing(tmp_path):
+def test_tui_process_uses_agent_loop_for_real_requests_regardless_of_phrasing():
     # There used to be a keyword gate here that only routed obvious phrasings
     # ("create a folder…") to the agent and sent everything else — including
     # natural phrasings that didn't match the keyword list — to a tool-less
     # chat fast path. It misclassified real requests often enough that it was
-    # removed: process() now always runs the agent loop, and the MODEL decides
-    # (via {"tool": ...} vs {"final": ...}) whether a turn needs a tool.
+    # removed: process() now runs the agent loop for anything that isn't
+    # unambiguous small talk, and the MODEL decides (via {"tool": ...} vs
+    # {"final": ...}) whether a turn needs a tool.
+    from sabi.router import is_smalltalk
+    for msg in ["create a folder called app", "in the app folder, add main.py",
+                "fix the login bug", "what does this function do?"]:
+        assert not is_smalltalk(msg), msg
+
+
+def test_tui_process_routes_smalltalk_to_chat_not_agent_loop():
+    # Regression test for a real incident: a bare "hello" reached the agent's
+    # tool-calling loop and resulted in an invented, executed tool call that
+    # corrupted real repository files. Small talk must never reach the tool
+    # loop at all — see sabi.router.is_smalltalk and SabiTUI._run_chat.
     from sabi.ui.tui import SabiTUI
-    assert not hasattr(SabiTUI, "_run_chat")
-    import sabi.ui.tui as tui_mod
-    assert not hasattr(tui_mod, "wants_action")
+    assert hasattr(SabiTUI, "_run_chat")
+    from sabi.router import is_smalltalk
+    for msg in ["hello", "hi", "thanks", "how are you"]:
+        assert is_smalltalk(msg), msg
 
 
 def test_location_safety_net(tmp_path, monkeypatch):

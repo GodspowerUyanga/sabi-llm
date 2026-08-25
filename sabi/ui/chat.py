@@ -18,6 +18,7 @@ from . import console
 from ..runtime import Runtime
 from ..agent import Reporter
 from ..permissions import PermissionManager, Decision
+from ..router import is_smalltalk
 
 HELP = """
 Commands:
@@ -143,6 +144,21 @@ def chat_loop(runtime: Runtime, auto_approve: bool = False, cwd: str | None = No
             continue
         if low.startswith("/code "):
             _run_engine(runtime, "code", user[len("/code "):])
+            continue
+
+        # Unambiguous small talk ("hello", "thanks") never reaches the tool
+        # loop — a bare greeting was observed reaching it and resulting in an
+        # invented, executed tool call that corrupted real files. See
+        # sabi.router.is_smalltalk for why this is a hard gate, not a prompt
+        # instruction: an allowlist of pleasantries can't misfire on a real
+        # request the way the old action-keyword heuristic did.
+        if is_smalltalk(user):
+            result = runtime.handle(user, use_rag=False)
+            if not result.get("ok"):
+                C.error(result.get("error", "error"))
+                continue
+            C.rule("sabi")
+            C.markdown(result.get("text") or "Hi!")
             continue
 
         # Default: run through the agentic loop (can act, asks permission).
