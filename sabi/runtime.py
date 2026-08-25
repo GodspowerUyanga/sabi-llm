@@ -146,13 +146,22 @@ class Runtime:
         return added
 
     # ------------------------------------------------------- sabi-yoruba-tts
-    def _yoruba_status(self, text: str) -> str:
-        """'active' (translate this turn), 'unavailable' (wanted, not installed), or 'off'."""
-        if not self.config.yoruba_enabled or not translate.looks_like_yoruba(text):
+    def _yoruba_status(self, text: str, force: bool = False) -> str:
+        """'active' (translate this turn), 'unavailable' (wanted, not installed), or 'off'.
+
+        ``force`` skips the looks_like_yoruba auto-detect — e.g. a UI-level
+        "reply in Yoruba" toggle (sabi serve) that should apply regardless of
+        what language the typed message happens to be in.
+        """
+        if not self.config.yoruba_enabled or not (force or translate.looks_like_yoruba(text)):
             return "off"
         if translate.available(str(self.config.abs_yoruba_model_path())):
             return "active"
         return "unavailable"
+
+    def yoruba_available(self) -> bool:
+        """True if sabi-yoruba-tts is downloaded and ready to use right now."""
+        return translate.available(str(self.config.abs_yoruba_model_path()))
 
     def _to_english(self, text: str) -> str:
         return translate.to_english(text, str(self.config.abs_yoruba_model_path()))
@@ -169,12 +178,12 @@ class Runtime:
     )
 
     # ------------------------------------------------------------- handling
-    def handle(self, request: str, *, use_rag: bool = True) -> dict:
+    def handle(self, request: str, *, use_rag: bool = True, force_yoruba: bool = False) -> dict:
         """Route a request and run the appropriate engine. Returns a result dict."""
         if not self._started:
             self.start()
 
-        yoruba = self._yoruba_status(request)
+        yoruba = self._yoruba_status(request, force=force_yoruba)
         effective_request = self._to_english(request) if yoruba == "active" else request
 
         routing = self.router.route(effective_request, self.prompts.get("router", ""))
@@ -240,13 +249,13 @@ class Runtime:
 
     def agent(self, request: str, *, permissions: Optional[PermissionManager] = None,
               reporter: Optional[Reporter] = None, cwd: Optional[str] = None,
-              use_rag: bool = True) -> dict:
+              use_rag: bool = True, force_yoruba: bool = False) -> dict:
         """Run the agentic loop for a request and return a result dict."""
         if not self._started:
             self.start(cwd=cwd)
         # Translate the natural-language request/reply only; tool-call JSON,
         # file paths and code (`actions`) are never routed through translation.
-        yoruba = self._yoruba_status(request)
+        yoruba = self._yoruba_status(request, force=force_yoruba)
         effective_request = self._to_english(request) if yoruba == "active" else request
 
         loop = self.make_agent(permissions=permissions, reporter=reporter, cwd=cwd)

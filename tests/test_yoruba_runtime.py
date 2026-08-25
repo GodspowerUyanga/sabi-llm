@@ -55,3 +55,32 @@ def test_to_yoruba_falls_back_gracefully_on_error(tmp_path, monkeypatch):
     monkeypatch.setattr(translate, "to_yoruba", boom)
     out = rt._to_yoruba("hello")
     assert "hello" in out and "unavailable" in out.lower()
+
+
+# ------------------------------------------------------- force (sabi serve toggle)
+def test_force_activates_yoruba_for_english_text_when_model_present(tmp_path, monkeypatch):
+    rt = _runtime(tmp_path)
+    monkeypatch.setattr(translate, "available", lambda model_dir: True)
+    # Plain English text — would normally be "off" — but the explicit UI
+    # toggle (sabi serve's Yorùbá button) should force it regardless.
+    assert rt._yoruba_status("what is our total revenue?") == "off"
+    assert rt._yoruba_status("what is our total revenue?", force=True) == "active"
+
+
+def test_force_reports_unavailable_not_active_when_model_missing(tmp_path):
+    rt = _runtime(tmp_path)  # no model at this path
+    assert rt._yoruba_status("hello", force=True) == "unavailable"
+
+
+def test_force_off_when_yoruba_disabled_in_config(tmp_path, monkeypatch):
+    rt = _runtime(tmp_path, yoruba_enabled=False)
+    monkeypatch.setattr(translate, "available", lambda model_dir: True)
+    assert rt._yoruba_status("hello", force=True) == "off"
+
+
+def test_yoruba_available_reflects_translate_available(tmp_path, monkeypatch):
+    rt = _runtime(tmp_path)
+    monkeypatch.setattr(translate, "available", lambda model_dir: False)
+    assert rt.yoruba_available() is False
+    monkeypatch.setattr(translate, "available", lambda model_dir: True)
+    assert rt.yoruba_available() is True

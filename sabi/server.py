@@ -44,8 +44,16 @@ def _file_context(cid: Optional[str], budget: int = 3000) -> str:
     return "Attached files the user uploaded:\n" + "\n\n".join(parts)
 
 
-def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None) -> dict:
-    """Produce an assistant reply for a message in the given mode."""
+def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None,
+            yoruba: bool = False) -> dict:
+    """Produce an assistant reply for a message in the given mode.
+
+    ``yoruba`` is the explicit UI toggle (sabi serve's Yoruba switch) —
+    forces the sabi-yoruba-tts translation layer regardless of whether the
+    typed message itself looks like Yoruba. THINK/CODE bypass Runtime and
+    call the engines directly (existing behaviour, unrelated to this
+    change), so the toggle only applies to auto/chat and agent mode.
+    """
     ctx = _file_context(cid)
     msg = (message + ("\n\n" + ctx if ctx else ""))
     try:
@@ -59,11 +67,11 @@ def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None
                     "tps": round(gen.tokens_per_second, 2), "actions": []}
         if mode == "agent":
             perms = PermissionManager(auto_approve=True)  # web auto-approves
-            res = runtime.agent(msg, permissions=perms, reporter=Reporter())
+            res = runtime.agent(msg, permissions=perms, reporter=Reporter(), force_yoruba=yoruba)
             return {"answer": res.get("answer", ""), "intent": "AGENT",
                     "tps": 0, "actions": res.get("actions", [])}
         # auto / chat
-        res = runtime.handle(msg)
+        res = runtime.handle(msg, force_yoruba=yoruba)
         if res.get("ok"):
             return {"answer": res.get("text", ""), "intent": res.get("intent", "CHAT"),
                     "tps": res.get("tps", 0), "actions": []}
@@ -97,6 +105,8 @@ def create_app(runtime: Runtime, store: ConversationStore):
             "model_ready": bool(m and m.is_available()),
             "model_status": m.status() if m else "n/a",
             "ram_ceiling_gb": runtime.config.ram_ceiling_gb,
+            "yoruba_enabled": runtime.config.yoruba_enabled,
+            "yoruba_available": runtime.yoruba_available(),
         })
 
     # ---- conversations ----
@@ -129,13 +139,14 @@ def create_app(runtime: Runtime, store: ConversationStore):
         cid = body.get("conversation_id")
         message = (body.get("message") or "").strip()
         mode = body.get("mode", "auto")
+        yoruba = bool(body.get("yoruba"))
         if not message:
             return jsonify({"error": "empty message"}), 400
         if not cid or not store.get(cid):
             cid = store.create()["id"]
 
         store.add_message(cid, "user", message)
-        result = _answer(runtime, message, mode, cid=cid)
+        result = _answer(runtime, message, mode, cid=cid, yoruba=yoruba)
         reply = result.get("answer") or result.get("error") or "(no response)"
         store.add_message(cid, "assistant", reply, meta={
             "intent": result.get("intent"), "tps": result.get("tps"),
@@ -150,11 +161,36 @@ def create_app(runtime: Runtime, store: ConversationStore):
         body = request.json or {}
         cid = body.get("conversation_id")
         message = (body.get("message") or "").strip()
+        yoruba_toggle = bool(body.get("yoruba"))
         if not message:
             return jsonify({"error": "empty message"}), 400
         if not cid or not store.get(cid):
             cid = store.create()["id"]
         store.add_message(cid, "user", message)
+
+        # This endpoint called runtime.model.chat_stream() directly, bypassing
+        # Runtime.handle() entirely — so sabi-yoruba-tts (wired into
+        # Runtime.handle()) never ran here even though it's the default web
+        # chat path. Real token streaming can't apply to a translated reply
+        # (translation needs the complete English text first), so a Yoruba
+        # turn runs a normal full generation via Runtime.handle(), translates
+        # it, then sends that back through the same streaming response shape
+        # in a few chunks — the UI still gets an incremental-looking reply,
+        # it just isn't literally token-by-token for this one turn.
+        yoruba_status = runtime._yoruba_status(message, force=yoruba_toggle)
+        if yoruba_status != "off":
+            def generate_yoruba():
+                res = runtime.handle(message, force_yoruba=True)
+                text = res.get("text") or res.get("error") or "(no response)"
+                chunk = max(1, len(text) // 12)
+                for i in range(0, len(text), chunk):
+                    yield text[i:i + chunk]
+                store.add_message(cid, "assistant", text, meta={"intent": "CHAT", "language": "yo"})
+            resp = Response(stream_with_context(generate_yoruba()), mimetype="text/plain")
+            resp.headers["X-Conversation-Id"] = cid
+            resp.headers["X-Accel-Buffering"] = "no"
+            resp.headers["Cache-Control"] = "no-cache"
+            return resp
 
         ctx = _file_context(cid)
         system = runtime.prompts.get("system", "") or None

@@ -84,6 +84,15 @@ body {
   background: var(--panel); color: var(--ink); border: 1px solid var(--line);
   border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer;
 }
+.yoruba-toggle {
+  background: var(--panel); color: var(--muted); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+}
+.yoruba-toggle:hover:not(:disabled) { border-color: var(--teal-bright); color: var(--ink); }
+.yoruba-toggle.active {
+  background: var(--teal); color: #ffffff; border-color: var(--teal-bright);
+}
+.yoruba-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 .agent-warning {
   background: #3a2d12; color: #ecd9a6; border-bottom: 1px solid #5a4a1f;
   padding: 9px 22px; font-size: 12.5px;

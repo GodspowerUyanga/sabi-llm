@@ -3,7 +3,7 @@
   "use strict";
 
   const $ = (s) => document.querySelector(s);
-  const state = { cid: null, conversations: [], sending: false, mode: "auto" };
+  const state = { cid: null, conversations: [], sending: false, mode: "auto", yoruba: false };
 
   const els = {
     list: $("#conv-list"),
@@ -14,6 +14,7 @@
     newChat: $("#new-chat"),
     title: $("#conv-title"),
     mode: $("#mode"),
+    yorubaToggle: $("#yoruba-toggle"),
     agentWarn: $("#agent-warning"),
     modelDot: $("#model-dot"),
     modelLabel: $("#model-label"),
@@ -217,7 +218,7 @@
     if (state.mode === "agent") {
       try {
         const res = await api.post("/api/chat", {
-          conversation_id: state.cid, message: text, mode: state.mode,
+          conversation_id: state.cid, message: text, mode: state.mode, yoruba: state.yoruba,
         });
         thinking.remove();
         if (res.conversation_id) state.cid = res.conversation_id;
@@ -238,7 +239,9 @@
     try {
       const resp = await fetch("/api/chat/stream", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversation_id: state.cid, message: text, mode: state.mode }),
+        body: JSON.stringify({
+          conversation_id: state.cid, message: text, mode: state.mode, yoruba: state.yoruba,
+        }),
       });
       const newCid = resp.headers.get("X-Conversation-Id");
       if (newCid) state.cid = newCid;
@@ -255,7 +258,7 @@
         scrollDown();
       }
       bubble.innerHTML = renderMarkdown(buf) +
-        '<div class="meta">CHAT · streamed</div>';
+        '<div class="meta">' + (state.yoruba ? "CHAT · 🇳🇬 Yorùbá" : "CHAT · streamed") + '</div>';
       attachCopyButton(bubble, () => buf);
       await refreshTitles();
     } catch (e) {
@@ -322,6 +325,15 @@
         ? s.model_label + " · ready"
         : "model not loaded";
       els.modelDot.className = "dot " + (s.model_ready ? "ready" : "down");
+      if (s.yoruba_available) {
+        els.yorubaToggle.disabled = false;
+        els.yorubaToggle.title = "Reply in Yoruba (sabi-yoruba-tts) — click to toggle";
+      } else {
+        els.yorubaToggle.disabled = true;
+        els.yorubaToggle.title = s.yoruba_enabled
+          ? "sabi-yoruba-tts isn't downloaded yet — run: python scripts/download_yoruba_model.py"
+          : "Yoruba is disabled in config (yoruba_enabled: false)";
+      }
     } catch (e) { els.modelLabel.textContent = "offline"; }
   }
 
@@ -347,6 +359,13 @@
   els.mode.onchange = () => {
     state.mode = els.mode.value;
     els.agentWarn.classList.toggle("hidden", state.mode !== "agent");
+  };
+  els.yorubaToggle.onclick = () => {
+    state.yoruba = !state.yoruba;
+    els.yorubaToggle.classList.toggle("active", state.yoruba);
+    els.input.placeholder = state.yoruba
+      ? "Bi ohunkóhun…  (a máa dá lédè Yorùbá)"
+      : "Ask anything…  (Shift+Enter for a new line)";
   };
   document.querySelectorAll(".sugg").forEach((b) => {
     b.onclick = () => { send(b.textContent); };
