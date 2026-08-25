@@ -1,81 +1,80 @@
-──────────────────────────────── SABI Benchmark ────────────────────────────────
 {
   "model_available": true,
-  "avg_tps": 18.93,
-  "avg_accuracy": 0.781,
-  "peak_rss_gb": 3.282,
-  "efficiency_score": 53.1,
+  "avg_tps": 19.75,
+  "avg_accuracy": 0.719,
+  "peak_rss_gb": 3.452,
+  "efficiency_score": 50.7,
   "thermal_throttle": true,
   "cases": [
     {
       "name": "prd_generation",
       "intent": "THINK",
-      "tps": 20.89,
-      "accuracy": 0.75,
-      "elapsed_s": 49.03,
+      "tps": 20.46,
+      "accuracy": 0.25,
+      "elapsed_s": 31.18,
       "ok": true,
       "note": ""
     },
     {
       "name": "sop_generation",
       "intent": "THINK",
-      "tps": 18.2,
+      "tps": 19.25,
       "accuracy": 0.333,
-      "elapsed_s": 45.87,
+      "elapsed_s": 48.25,
       "ok": true,
       "note": ""
     },
     {
       "name": "architecture_plan",
       "intent": "THINK",
-      "tps": 19.19,
+      "tps": 21.17,
       "accuracy": 0.667,
-      "elapsed_s": 36.74,
+      "elapsed_s": 34.53,
       "ok": true,
       "note": ""
     },
     {
       "name": "python_fizzbuzz",
       "intent": "CODE",
-      "tps": 20.12,
+      "tps": 20.01,
       "accuracy": 1.0,
-      "elapsed_s": 9.39,
+      "elapsed_s": 10.99,
       "ok": true,
       "note": ""
     },
     {
       "name": "debug_indexerror",
       "intent": "CODE",
-      "tps": 20.6,
+      "tps": 19.93,
       "accuracy": 1.0,
-      "elapsed_s": 7.82,
+      "elapsed_s": 7.33,
       "ok": true,
       "note": ""
     },
     {
       "name": "js_debounce",
       "intent": "CODE",
-      "tps": 20.19,
+      "tps": 21.38,
       "accuracy": 1.0,
-      "elapsed_s": 21.0,
+      "elapsed_s": 20.67,
       "ok": true,
       "note": ""
     },
     {
       "name": "scaffold_cli",
       "intent": "CODE",
-      "tps": 19.69,
+      "tps": 18.97,
       "accuracy": 1.0,
-      "elapsed_s": 48.35,
+      "elapsed_s": 38.27,
       "ok": true,
       "note": ""
     },
     {
       "name": "general_explain",
       "intent": "CHAT",
-      "tps": 12.57,
+      "tps": 16.86,
       "accuracy": 0.5,
-      "elapsed_s": 3.26,
+      "elapsed_s": 1.78,
       "ok": true,
       "note": ""
     }

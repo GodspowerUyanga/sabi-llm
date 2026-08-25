@@ -8,15 +8,15 @@
 ✔ PyYAML (config): installed
 ✔ huggingface_hub (model download): installed
 ✔ Model file: 
-/home/godspower.uyanga@Interswitchng.com/Desktop/sabi-llm/models/sabi-3b.Q4_K_M.
-gguf
-✔ Model size on disk: 1.80 GB  (ADTC RAM budget: 7.0 GB)
-✔ Est. runtime RAM: ~3.10 GB of 7.0 GB budget (44% of ceiling)
-✔ Headroom vs budget: 3.90 GB free under the 7.0 GB ceiling
+/home/godspower.uyanga@Interswitchng.com/Desktop/projects/sabi-llm/models/sabi-v
+1.Q4_K_M.gguf
+✔ Model size on disk: 1.96 GB  (ADTC RAM budget: 7.0 GB)
+✔ Est. runtime RAM: ~3.26 GB of 7.0 GB budget (47% of ceiling)
+✔ Headroom vs budget: 3.74 GB free under the 7.0 GB ceiling
 ✔ Measured peak RAM: run `sabi benchmark` to measure actual peak RSS during 
 inference
-✔ Available RAM: 10.70 GB free
+✔ Available RAM: 10.15 GB free
 ✔ Workspace writable: 
-/home/godspower.uyanga@Interswitchng.com/Desktop/sabi-llm/sabi_workspace
+/home/godspower.uyanga@Interswitchng.com/.sabi/sabi_workspace
 
 ✔ All checks passed.

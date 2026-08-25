@@ -1,16 +1,34 @@
-=== sabi agent: scaffold the crop-price advisory tool from the PRD above ===
+$ sabi agent --yes --cwd /tmp/sabi_demo_04 "create a file main.py that prints hello"
+
 · SABI is thinking…
-llama_context: n_ctx_seq (4096) < n_ctx_train (32768) -- the full capacity of the model will not be utilized
 · SABI wants to make changes…
 ✔ done
-Created directory 
-/tmp/claude-838847511/-home-godspower-uyanga-Interswitchng-com-Desktop-sabi-llm/
-d7043314-5d07-4f8c-b31e-9d4c2cc928cd/scratchpad/agent_demo_cwd/crop_advisor
+Wrote 14 chars to /tmp/sabi_demo_04/main.py
+· SABI is thinking…
+· SABI wants to make changes…
+✔ done
+hello
+· SABI is thinking…
+· SABI wants to access your files…
+✔ done
+d .sabi
+f main.py
+· SABI is thinking…
+· SABI wants to make changes…
+✖ action failed: Unknown tool: delete_file
 · SABI is thinking…
 ─────────────────────────────────── actions ────────────────────────────────────
-  OK: create a directory:  
-/tmp/claude-838847511/-home-godspower-uyanga-Interswitchng-com-Desktop-sabi-llm/
-d7043314-5d07-4f8c-b31e-9d4c2cc928cd/scratchpad/agent_demo_cwd/crop_advisor
+  OK: write a file:  /tmp/sabi_demo_04/main.py  (14 chars)
+  OK: run a shell command:  python3 /tmp/sabi_demo_04/main.py
+  OK: list a directory:  /tmp/sabi_demo_04
+  FAIL: delete_file  {'path': '/tmp/sabi_demo_04/main.py'}
 ───────────────────────────────────── sabi ─────────────────────────────────────
-Next, I'll create the __init__.py and main.py files within the crop_advisor     
-directory, along with a README.md and requirements.txt.                         
+Here is what I completed: OK: write a file: /tmp/sabi_demo_04/main.py (14
+chars) OK: run a shell command: python3 /tmp/sabi_demo_04/main.py OK: list a
+directory: /tmp/sabi_demo_04 FAIL: delete_file {'path':
+'/tmp/sabi_demo_04/main.py'}
+
+$ cat /tmp/sabi_demo_04/main.py
+print('hello')
+# file still present — the FAIL above never actually deleted anything,
+# because delete_file isn't a registered tool. See demo/README.md.
