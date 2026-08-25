@@ -53,6 +53,7 @@ DEFAULTS: Dict[str, Any] = {
     "temperature": 0.4,
     "top_p": 0.9,
     "n_threads": 0,          # 0 = auto (use all physical cores)
+    "n_batch": 256,          # prompt-processing batch size; higher = faster prefill, more RAM
     "n_gpu_layers": 0,       # 0 = CPU-only (challenge target has no discrete GPU)
     # --- Runtime ---
     "workspace_dir": "sabi_workspace",
@@ -102,6 +103,7 @@ class Config:
     temperature: float = DEFAULTS["temperature"]
     top_p: float = DEFAULTS["top_p"]
     n_threads: int = DEFAULTS["n_threads"]
+    n_batch: int = DEFAULTS["n_batch"]
     n_gpu_layers: int = DEFAULTS["n_gpu_layers"]
     workspace_dir: str = DEFAULTS["workspace_dir"]
     prompts_dir: str = DEFAULTS["prompts_dir"]

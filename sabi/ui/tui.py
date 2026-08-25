@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -384,18 +385,38 @@ if _HAS_TEXTUAL:
             self.call_from_thread(self._set_status, "ready")
 
         def _run_chat(self, message: str) -> None:
+            # Streamed, unlike _run_action's agent loop: a plain chat reply has
+            # no tool call to parse, so there's no reason to make the user
+            # stare at a spinner for the whole generation — tokens appear as
+            # they're produced, which is most of what "feels fast" actually
+            # means on CPU inference (throughput doesn't change, perceived
+            # latency drops a lot).
             self.call_from_thread(self.activity_reset)
+            system = self.rt.prompts.get("system", "") or None
+            messages = ([{"role": "system", "content": system}] if system else []) + \
+                [{"role": "user", "content": message}]
+            widget = self.call_from_thread(self._mount_sabi, "…")
+            text = ""
+            t0 = time.perf_counter()
             try:
-                res = self.rt.handle(message, use_rag=False)
+                for delta in self.rt.model.chat_stream(messages):
+                    text += delta
+                    self.call_from_thread(widget.update, Markdown(text, code_theme="monokai"))
+                    self.call_from_thread(self._scroll)
             except Exception as exc:  # noqa: BLE001
-                self.call_from_thread(self._mount_sabi, f"⚠ {exc}"); return
-            if not res.get("ok"):
-                self.call_from_thread(self._mount_sabi, f"⚠ {res.get('error', 'error')}"); return
-            self.total_tokens += res.get("tokens", 0)
-            self.last_turn_tokens = res.get("tokens", 0)
-            self.call_from_thread(self._mount_sabi, res.get("text") or "Hi!")
-            self.call_from_thread(self._mount_meta,
-                                  f"{res.get('tokens', 0):,} tokens · {res.get('elapsed_s', 0):.1f}s · chat")
+                self.call_from_thread(widget.update, Markdown(f"⚠ {exc}")); return
+            elapsed = time.perf_counter() - t0
+            text = text.strip() or "Hi!"
+            self.call_from_thread(widget.update, Markdown(text, code_theme="monokai"))
+            tokens = self.rt.model.count_tokens(text)
+            self.total_tokens += tokens
+            self.last_turn_tokens = tokens
+            self.call_from_thread(self._mount_meta, f"~{tokens:,} tokens · {elapsed:.1f}s · chat")
+            try:
+                self.rt.memory.add_turn("user", message, "CHAT")
+                self.rt.memory.add_turn("assistant", text, "CHAT")
+            except Exception:
+                pass
 
         def _run_action(self, message: str) -> None:
             self.call_from_thread(self.activity_reset)

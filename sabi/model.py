@@ -49,6 +49,27 @@ def _llama_available() -> bool:
         return False
 
 
+def _auto_threads() -> int:
+    """Physical core count, not logical/hyperthread count.
+
+    llama.cpp's own "auto" (passing n_threads=None) defaults to
+    logical_cpu_count // 2, which underutilizes a machine with hybrid
+    P/E cores or hyperthreading — e.g. 11 threads on a 22-logical/16-physical
+    core CPU, measurably slower than using all 16 physical cores for this
+    compute-bound (matrix-multiply-heavy) workload, where hyperthreads add
+    little since both threads on a core share the same execution units.
+    """
+    try:
+        import psutil
+        n = psutil.cpu_count(logical=False)
+        if n:
+            return n
+    except Exception:
+        pass
+    import os
+    return max(os.cpu_count() or 4, 1)
+
+
 class LLMModel:
     """Lazy wrapper around a llama.cpp model."""
 
@@ -97,11 +118,12 @@ class LLMModel:
 
         from llama_cpp import Llama  # local import keeps startup fast
 
-        n_threads = self.config.n_threads or None  # None => llama.cpp auto
+        n_threads = self.config.n_threads or _auto_threads()
         self._llm = Llama(
             model_path=str(self.model_file),
             n_ctx=self.config.context_length,
             n_threads=n_threads,
+            n_batch=self.config.n_batch,
             n_gpu_layers=self.config.n_gpu_layers,
             verbose=self.config.verbose,
         )
