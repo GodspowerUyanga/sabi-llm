@@ -214,52 +214,26 @@
     addMessage("user", text);
     const thinking = showThinking();
 
-    // Agent mode acts (creates files / runs commands) -> non-streaming call.
-    if (state.mode === "agent") {
-      try {
-        const res = await api.post("/api/chat", {
-          conversation_id: state.cid, message: text, mode: state.mode, yoruba: state.yoruba,
-        });
-        thinking.remove();
-        if (res.conversation_id) state.cid = res.conversation_id;
-        addMessage("assistant", res.answer || res.error || "(no response)", {
-          intent: res.intent, tps: res.tps, actions: res.actions,
-        });
-        await refreshTitles();
-      } catch (e) {
-        thinking.remove();
-        addMessage("assistant", "⚠ Error contacting SABI: " + e);
-      } finally {
-        finishSend();
-      }
-      return;
-    }
-
-    // Conversational modes -> stream tokens as they arrive.
+    // Every mode goes through the same non-streaming call now. "auto" (the
+    // default) and "agent" can both act on the filesystem — the server
+    // decides per-message whether "auto" is small talk (plain reply) or a
+    // real request (full agent power: create/edit/move files and folders,
+    // run commands, build whole projects), so no mode switch is needed for
+    // SABI to actually do things. This also fixes "think"/"code" mode: the
+    // old streaming path never read `mode` at all, so selecting those did
+    // nothing differently from "auto" — real token streaming can't apply
+    // to a multi-step agent loop's tool calls anyway, so one consistent
+    // request/response path replaces the old streaming-vs-non-streaming
+    // split entirely.
     try {
-      const resp = await fetch("/api/chat/stream", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          conversation_id: state.cid, message: text, mode: state.mode, yoruba: state.yoruba,
-        }),
+      const res = await api.post("/api/chat", {
+        conversation_id: state.cid, message: text, mode: state.mode, yoruba: state.yoruba,
       });
-      const newCid = resp.headers.get("X-Conversation-Id");
-      if (newCid) state.cid = newCid;
       thinking.remove();
-      const bubble = addStreamingBubble();
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        bubble.innerHTML = renderMarkdown(buf);
-        scrollDown();
-      }
-      bubble.innerHTML = renderMarkdown(buf) +
-        '<div class="meta">' + (state.yoruba ? "CHAT · 🇳🇬 Yorùbá" : "CHAT · streamed") + '</div>';
-      attachCopyButton(bubble, () => buf);
+      if (res.conversation_id) state.cid = res.conversation_id;
+      addMessage("assistant", res.answer || res.error || "(no response)", {
+        intent: res.intent, tps: res.tps, actions: res.actions,
+      });
       await refreshTitles();
     } catch (e) {
       thinking.remove();
@@ -277,17 +251,6 @@
     await loadConversations();
     const conv = state.conversations.find((c) => c.id === state.cid);
     if (conv) els.title.textContent = conv.title;
-  }
-
-  function addStreamingBubble() {
-    els.empty.classList.add("hidden");
-    const row = document.createElement("div");
-    row.className = "row sabi";
-    row.innerHTML = '<div class="bubble-wrap"><div class="avatar sabi">S</div>' +
-      '<div class="bubble"></div></div>';
-    els.messages.appendChild(row);
-    scrollDown();
-    return row.querySelector(".bubble");
   }
 
   async function uploadFiles(fileList) {
@@ -358,7 +321,10 @@
   };
   els.mode.onchange = () => {
     state.mode = els.mode.value;
-    els.agentWarn.classList.toggle("hidden", state.mode !== "agent");
+    // "auto" acts on real requests now too (see send()), so it carries the
+    // same filesystem-access warning as "agent" — only think/code are
+    // text-only and don't touch the filesystem.
+    els.agentWarn.classList.toggle("hidden", state.mode === "think" || state.mode === "code");
   };
   els.yorubaToggle.onclick = () => {
     state.yoruba = !state.yoruba;

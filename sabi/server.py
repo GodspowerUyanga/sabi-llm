@@ -5,12 +5,19 @@ backed by the SABI runtime. Flask is an optional dependency installed via
 ``pip install "sabi-llm[serve]"``.
 
 Modes per message:
-  * auto   - router decides THINK / CODE / CHAT (default; conversational)
-  * think  - planning / analysis engine
-  * code   - code generation engine (returns code as text)
-  * agent  - acting agent (can create files / run commands); web runs it in
-             auto-approve mode, so the UI shows a clear warning and lists the
-             actions taken.
+  * auto   - the default and the main way to use sabi serve: unambiguous
+             small talk gets a plain conversational reply, anything else
+             gets full agent power automatically (filesystem access,
+             create/edit/move files and folders, run commands, build whole
+             projects) — the same capability `sabi run`'s terminal UI has,
+             with no separate mode selection needed. Auto-approves actions
+             in the browser, so the UI shows a warning and lists what was
+             done.
+  * think  - planning / analysis engine, text-only (no filesystem access)
+  * code   - code generation engine, text-only (no filesystem access)
+  * agent  - explicitly force the agent loop even for small talk (rarely
+             needed now that auto does this automatically; kept for
+             power users who want to be certain a message is acted on)
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ from .conversations import ConversationStore
 from .permissions import PermissionManager
 from .agent import Reporter
 from .filereader import read_any
+from .router import is_smalltalk
 
 WEB_DIR = Path(__file__).resolve().parent / "ui" / "web"
 
@@ -70,13 +78,25 @@ def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None
             res = runtime.agent(msg, permissions=perms, reporter=Reporter(), force_yoruba=yoruba)
             return {"answer": res.get("answer", ""), "intent": "AGENT",
                     "tps": 0, "actions": res.get("actions", [])}
-        # auto / chat
-        res = runtime.handle(msg, force_yoruba=yoruba)
-        if res.get("ok"):
-            return {"answer": res.get("text", ""), "intent": res.get("intent", "CHAT"),
-                    "tps": res.get("tps", 0), "actions": []}
-        return {"answer": "", "error": res.get("error", "request failed"),
-                "intent": res.get("intent", "CHAT"), "actions": []}
+        # auto: unambiguous small talk stays a plain, tool-free chat reply;
+        # anything else gets full agent power (filesystem access, create/edit/
+        # move files and folders, run commands) automatically — no separate
+        # "Agent" mode selection needed for SABI to actually act. Small talk
+        # is still hard-gated away from the tool loop for the same reason as
+        # the TUI/chat CLI: a bare "hello" reaching the agent loop has, on
+        # this size of model, resulted in an invented/executed destructive
+        # tool call.
+        if is_smalltalk(msg):
+            res = runtime.handle(msg, force_yoruba=yoruba)
+            if res.get("ok"):
+                return {"answer": res.get("text", ""), "intent": res.get("intent", "CHAT"),
+                        "tps": res.get("tps", 0), "actions": []}
+            return {"answer": "", "error": res.get("error", "request failed"),
+                    "intent": res.get("intent", "CHAT"), "actions": []}
+        perms = PermissionManager(auto_approve=True)  # web auto-approves
+        res = runtime.agent(msg, permissions=perms, reporter=Reporter(), force_yoruba=yoruba)
+        return {"answer": res.get("answer", ""), "intent": "AGENT",
+                "tps": 0, "actions": res.get("actions", [])}
     except Exception as exc:  # noqa: BLE001
         return {"answer": "", "error": str(exc), "intent": mode.upper(), "actions": []}
 

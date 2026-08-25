@@ -104,6 +104,42 @@ def test_chat_without_model_returns_graceful(client):
     assert "conversation_id" in body
 
 
+def test_auto_mode_routes_smalltalk_to_chat_not_agent(client, monkeypatch):
+    # "auto" mode must never send small talk through the tool-calling agent
+    # loop — same hard rule as sabi chat/sabi tui (see sabi.router.is_smalltalk).
+    import sabi.server as server_mod
+    calls = {"agent": 0, "handle": 0}
+    monkeypatch.setattr(server_mod.Runtime, "agent",
+                        lambda self, *a, **k: calls.__setitem__("agent", calls["agent"] + 1) or
+                        {"ok": True, "answer": "", "actions": []})
+    monkeypatch.setattr(server_mod.Runtime, "handle",
+                        lambda self, *a, **k: calls.__setitem__("handle", calls["handle"] + 1) or
+                        {"ok": True, "text": "hi", "intent": "CHAT", "tps": 0})
+    r = client.post("/api/chat", json={"message": "hello", "mode": "auto"})
+    assert r.status_code == 200
+    assert calls == {"agent": 0, "handle": 1}
+
+
+def test_auto_mode_routes_real_requests_to_agent(client, monkeypatch):
+    # "auto" mode is the main way to use sabi serve now: a real request (not
+    # small talk) gets full agent power automatically, no mode switch needed.
+    import sabi.server as server_mod
+    calls = {"agent": 0, "handle": 0}
+    monkeypatch.setattr(server_mod.Runtime, "agent",
+                        lambda self, *a, **k: calls.__setitem__("agent", calls["agent"] + 1) or
+                        {"ok": True, "answer": "done", "actions": ["OK: wrote main.py"]})
+    monkeypatch.setattr(server_mod.Runtime, "handle",
+                        lambda self, *a, **k: calls.__setitem__("handle", calls["handle"] + 1) or
+                        {"ok": True, "text": "", "intent": "CHAT", "tps": 0})
+    r = client.post("/api/chat", json={"message": "create a file main.py that prints hello",
+                                        "mode": "auto"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert calls == {"agent": 1, "handle": 0}
+    assert body["intent"] == "AGENT"
+    assert body["actions"] == ["OK: wrote main.py"]
+
+
 def test_chat_accepts_yoruba_flag_without_crashing(client, monkeypatch):
     # No LLM model in the test env either way; this just proves the yoruba
     # request field is plumbed through _answer() -> Runtime.handle(force_yoruba)
