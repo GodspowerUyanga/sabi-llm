@@ -209,74 +209,80 @@ def create_app(runtime: Runtime, store: ConversationStore):
         })
         return jsonify({"conversation_id": cid, **result})
 
-    # ---- chat (streaming, token-by-token) ----
+    # ---- chat (one endpoint, two internal paths) ----
+    # Real token-by-token streaming only applies to a plain chat reply — a
+    # multi-step agent turn's tool-call JSON can't stream meaningfully
+    # (there's nothing sensible to show mid-tool-call), and a Yoruba reply
+    # needs the complete English text before it can even be translated. So:
+    # unambiguous small talk in "auto" mode (the common case — greetings,
+    # quick questions) streams for real, live, as it's generated; everything
+    # else (a real request auto routes to the agent, explicit agent/think/
+    # code modes, any Yoruba turn) runs once via _answer() — the same logic
+    # /api/chat uses — and sends the finished result back through this same
+    # streaming response shape in a few chunks, so the UI still gets an
+    # incremental-looking reply instead of one silent wait-then-snap, and the
+    # frontend only needs the one code path regardless of mode.
     @app.post("/api/chat/stream")
     def chat_stream():
         from flask import Response, stream_with_context
         body = request.json or {}
         cid = body.get("conversation_id")
         message = (body.get("message") or "").strip()
-        yoruba_toggle = bool(body.get("yoruba"))
+        mode = body.get("mode", "auto")
+        yoruba = bool(body.get("yoruba"))
         if not message:
             return jsonify({"error": "empty message"}), 400
         if not cid or not store.get(cid):
             cid = store.create()["id"]
         store.add_message(cid, "user", message)
 
-        # This endpoint called runtime.model.chat_stream() directly, bypassing
-        # Runtime.handle() entirely — so sabi-yoruba-tts (wired into
-        # Runtime.handle()) never ran here even though it's the default web
-        # chat path. Real token streaming can't apply to a translated reply
-        # (translation needs the complete English text first), so a Yoruba
-        # turn runs a normal full generation via Runtime.handle(), translates
-        # it, then sends that back through the same streaming response shape
-        # in a few chunks — the UI still gets an incremental-looking reply,
-        # it just isn't literally token-by-token for this one turn.
-        yoruba_status = runtime._yoruba_status(message, force=yoruba_toggle)
-        if yoruba_status != "off":
-            def generate_yoruba():
-                res = runtime.handle(message, force_yoruba=True)
-                text = res.get("text") or res.get("error") or "(no response)"
-                chunk = max(1, len(text) // 12)
-                for i in range(0, len(text), chunk):
-                    yield text[i:i + chunk]
-                store.add_message(cid, "assistant", text, meta={"intent": "CHAT", "language": "yo"})
-            resp = Response(stream_with_context(generate_yoruba()), mimetype="text/plain")
+        def _stream(gen):
+            resp = Response(stream_with_context(gen), mimetype="text/plain")
             resp.headers["X-Conversation-Id"] = cid
             resp.headers["X-Accel-Buffering"] = "no"
             resp.headers["Cache-Control"] = "no-cache"
             return resp
 
-        ctx = _file_context(cid)
-        system = runtime.prompts.get("system", "") or None
-        user = message + ("\n\n" + ctx if ctx else "")
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": user})
+        fast_chat = mode == "auto" and not yoruba and is_smalltalk(message)
+        if fast_chat:
+            ctx = _file_context(cid)
+            system = runtime.prompts.get("system", "") or None
+            user = message + ("\n\n" + ctx if ctx else "")
+            messages = ([{"role": "system", "content": system}] if system else []) + \
+                [{"role": "user", "content": user}]
 
-        def generate():
-            buf = ""
-            try:
-                streamed = False
-                for delta in runtime.model.chat_stream(messages):
-                    streamed = True
-                    buf += delta
-                    yield delta
-                if not streamed:
-                    buf = runtime.model.generate(user, system=system).text
-                    yield buf
-            except Exception as exc:  # noqa: BLE001 (includes ModelUnavailable)
-                err = f"\n\n⚠ {exc}"
-                buf += err
-                yield err
-            store.add_message(cid, "assistant", buf, meta={"intent": "CHAT"})
+            def generate_fast():
+                buf = ""
+                try:
+                    streamed = False
+                    for delta in runtime.model.chat_stream(messages):
+                        streamed = True
+                        buf += delta
+                        yield delta
+                    if not streamed:
+                        buf = runtime.model.generate(user, system=system).text
+                        yield buf
+                except Exception as exc:  # noqa: BLE001 (includes ModelUnavailable)
+                    err = f"\n\n⚠ {exc}"
+                    buf += err
+                    yield err
+                store.add_message(cid, "assistant", buf, meta={"intent": "CHAT"})
+            return _stream(generate_fast())
 
-        resp = Response(stream_with_context(generate()), mimetype="text/plain")
-        resp.headers["X-Conversation-Id"] = cid
-        resp.headers["X-Accel-Buffering"] = "no"
-        resp.headers["Cache-Control"] = "no-cache"
-        return resp
+        def generate_full():
+            result = _answer(runtime, message, mode, cid=cid, yoruba=yoruba, store=store)
+            answer = result.get("answer") or result.get("error") or "(no response)"
+            actions = result.get("actions") or []
+            text = ("**Actions taken:**\n" + "\n".join(f"- {a}" for a in actions) + "\n\n" + answer) \
+                if actions else answer
+            chunk = max(1, len(text) // 12)
+            for i in range(0, len(text), chunk):
+                yield text[i:i + chunk]
+            store.add_message(cid, "assistant", answer, meta={
+                "intent": result.get("intent"), "tps": result.get("tps"),
+                "actions": actions, "error": result.get("error"),
+            })
+        return _stream(generate_full())
 
     # ---- file upload (any format) ----
     @app.post("/api/upload")

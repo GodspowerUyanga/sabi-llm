@@ -218,3 +218,51 @@ def test_stream_endpoint_runs(client):
     assert r.status_code == 200
     assert r.headers.get("X-Conversation-Id")
     _ = r.get_data()  # drain the stream
+
+
+def test_stream_endpoint_uses_real_streaming_for_smalltalk(client, monkeypatch):
+    # Regression test: making sabi serve's default mode fully agentic (an
+    # earlier change this session) accidentally made ALL replies wait for a
+    # complete non-streaming response, including simple greetings that used
+    # to stream token-by-token — a real, reported slowdown. A bare "hello" in
+    # auto mode (no yoruba) must still go through real model.chat_stream(),
+    # not the buffer-then-chunk agent path.
+    import sabi.server as server_mod
+    import sabi.model as model_mod
+    calls = {"chat_stream": 0, "answer": 0}
+
+    def fake_chat_stream(self, messages):
+        calls["chat_stream"] += 1
+        yield "hi there"
+
+    def fake_answer(*a, **k):
+        calls["answer"] += 1
+        return {"answer": "", "intent": "CHAT", "tps": 0, "actions": []}
+
+    monkeypatch.setattr(model_mod.LLMModel, "chat_stream", fake_chat_stream)
+    monkeypatch.setattr(server_mod, "_answer", fake_answer)
+    r = client.post("/api/chat/stream", json={"message": "hello", "mode": "auto"})
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert calls == {"chat_stream": 1, "answer": 0}
+    assert "hi there" in body
+
+
+def test_stream_endpoint_uses_agent_path_for_real_requests(client, monkeypatch):
+    # A real request in auto mode must NOT take the fast token-stream path
+    # (it needs the full agent loop) — confirms _answer() is called instead.
+    import sabi.server as server_mod
+    calls = {"answer": 0}
+
+    def fake_answer(*a, **k):
+        calls["answer"] += 1
+        return {"answer": "created it", "intent": "AGENT", "tps": 0,
+                "actions": ["OK: wrote main.py"]}
+    monkeypatch.setattr(server_mod, "_answer", fake_answer)
+    r = client.post("/api/chat/stream",
+                    json={"message": "create a file main.py that prints hello", "mode": "auto"})
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert calls["answer"] == 1
+    assert "created it" in body
+    assert "OK: wrote main.py" in body  # actions surfaced inline in the stream
