@@ -23,6 +23,16 @@ sabi_workspace/**/
 benchmarks/report.json
 benchmarks/report.md
 
+# Leftovers from an earlier abandoned branch / local scratch — never part of
+# this repo's tracked structure (old debtor/summary spreadsheet exports, an
+# old RAG index, stale compliance/benchmark reports measured against the
+# wrong model, and the local adtc-profiler output).
+data/
+model/
+COMPLIANCE.md
+benchmark_report.json
+submission.json
+
 # Python
 __pycache__/
 *.py[cod]
