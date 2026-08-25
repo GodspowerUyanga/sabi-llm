@@ -1,0 +1,56 @@
+{
+  "model": "Sabi-1",
+  "mock_mode": false,
+  "config": {
+    "n_ctx": 8192,
+    "n_threads": 22,
+    "n_batch": 256
+  },
+  "speed": {
+    "avg_tps": 9.03,
+    "per_prompt": [
+      {
+        "prompt": "Summarise our refund policy in two sentences.",
+        "tokens": 40,
+        "seconds": 4.452,
+        "tps": 8.98
+      },
+      {
+        "prompt": "What is 0.15 * 52000000?",
+        "tokens": 18,
+        "seconds": 13.72,
+        "tps": 1.31
+      },
+      {
+        "prompt": "List three risks from our 2026 growth strategy.",
+        "tokens": 82,
+        "seconds": 6.161,
+        "tps": 13.31
+      },
+      {
+        "prompt": "Draft a one-line reminder to staff about submitting expense receipts.",
+        "tokens": 14,
+        "seconds": 3.638,
+        "tps": 3.85
+      },
+      {
+        "prompt": "Abeg, how many days person fit take as annual leave?",
+        "tokens": 287,
+        "seconds": 16.203,
+        "tps": 17.71
+      }
+    ]
+  },
+  "efficiency": {
+    "peak_ram_gb": 1.959,
+    "budget_gb": 7.0,
+    "Seff": 72.01,
+    "within_budget": true
+  },
+  "thermal": {
+    "max_temp_c": 101.0,
+    "penalty": 10
+  },
+  "oom_or_crash": false,
+  "disqualified": false
+}
