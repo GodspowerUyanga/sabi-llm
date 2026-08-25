@@ -46,6 +46,13 @@ def client(tmp_path, monkeypatch):
 
     cfg = load_config()
     monkeypatch.setattr(cfg, "workspace_dir", str(tmp_path))
+    # Force "no model" regardless of whether the real model happens to be
+    # downloaded on the machine running the tests — these tests exercise the
+    # graceful-degradation path specifically, not real inference, and must
+    # stay fast and deterministic either way. (A real download landing at
+    # the default model_path during this session turned these into 60-95s
+    # real-inference calls instead of instant no-model checks.)
+    monkeypatch.setattr(cfg, "model_path", str(tmp_path / "no-model-here.gguf"))
     rt = Runtime(cfg).start(cwd=str(tmp_path))
     store = ConversationStore(tmp_path / "conv.json")
     app = create_app(rt, store)

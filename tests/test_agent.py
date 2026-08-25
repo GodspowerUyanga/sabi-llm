@@ -82,6 +82,43 @@ def test_executor_list_dir_missing_path_suggests_close_match(tmp_path):
     assert "projects" in msg
 
 
+def test_executor_moves_file_into_existing_dir(tmp_path):
+    (tmp_path / "config.py").write_text("X = 1\n")
+    (tmp_path / "utils").mkdir()
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("move_file", {"src": "config.py", "dest": "utils"})
+    assert ok, msg
+    assert not (tmp_path / "config.py").exists()
+    assert (tmp_path / "utils" / "config.py").read_text() == "X = 1\n"
+
+
+def test_executor_moves_and_renames_file(tmp_path):
+    (tmp_path / "old.py").write_text("hi")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("move_file", {"src": "old.py", "dest": "new.py"})
+    assert ok, msg
+    assert not (tmp_path / "old.py").exists()
+    assert (tmp_path / "new.py").read_text() == "hi"
+
+
+def test_executor_move_file_never_overwrites(tmp_path):
+    (tmp_path / "a.py").write_text("A")
+    (tmp_path / "b.py").write_text("B")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("move_file", {"src": "a.py", "dest": "b.py"})
+    assert not ok
+    assert "already exists" in msg.lower()
+    assert (tmp_path / "a.py").read_text() == "A"
+    assert (tmp_path / "b.py").read_text() == "B"
+
+
+def test_executor_move_file_missing_source(tmp_path):
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("move_file", {"src": "nope.py", "dest": "elsewhere.py"})
+    assert not ok
+    assert "not found" in msg.lower()
+
+
 def test_executor_writes_file(tmp_path):
     ex = ToolExecutor(cwd=tmp_path)
     ok, _ = ex.execute("write_file", {"path": "notes/todo.txt", "content": "hi"})
