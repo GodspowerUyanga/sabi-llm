@@ -87,13 +87,23 @@ def create_app(runtime: Runtime, store: ConversationStore):
     app = Flask(__name__, static_folder=None)
 
     # ---- static frontend ----
+    # SABI is actively developed and re-run locally (edit app.js, restart
+    # `sabi serve`, refresh the browser) — a browser that cached the JS/CSS
+    # from a previous run would keep executing stale frontend code (e.g. an
+    # older build without the Yoruba toggle, or with a bug already fixed
+    # since) even after a normal refresh, with no visible sign anything is
+    # wrong. no-store forces every load to fetch the current file.
     @app.get("/")
     def index():
-        return send_from_directory(WEB_DIR, "index.html")
+        resp = send_from_directory(WEB_DIR, "index.html")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.get("/static/<path:fname>")
     def static_files(fname):
-        return send_from_directory(WEB_DIR, fname)
+        resp = send_from_directory(WEB_DIR, fname)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     # ---- status ----
     @app.get("/api/status")
