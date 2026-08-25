@@ -177,6 +177,7 @@ class LLMModel:
             max_tokens=max_tokens or self.config.max_tokens,
             temperature=self.config.temperature if temperature is None else temperature,
             top_p=self.config.top_p,
+            repeat_penalty=self.config.repeat_penalty,
             stop=stop or [],
         )
         if json_mode:
@@ -209,6 +210,7 @@ class LLMModel:
             max_tokens=max_tokens or self.config.max_tokens,
             temperature=self.config.temperature if temperature is None else temperature,
             top_p=self.config.top_p,
+            repeat_penalty=self.config.repeat_penalty,
             stop=stop or [],
             stream=True,
         )

@@ -52,6 +52,7 @@ DEFAULTS: Dict[str, Any] = {
     "max_tokens": 1024,
     "temperature": 0.4,
     "top_p": 0.9,
+    "repeat_penalty": 1.18,  # stops small models looping/repeating the same token(s) forever
     "n_threads": 0,          # 0 = auto (use all physical cores)
     "n_batch": 256,          # prompt-processing batch size; higher = faster prefill, more RAM
     "n_gpu_layers": 0,       # 0 = CPU-only (challenge target has no discrete GPU)
@@ -102,6 +103,7 @@ class Config:
     max_tokens: int = DEFAULTS["max_tokens"]
     temperature: float = DEFAULTS["temperature"]
     top_p: float = DEFAULTS["top_p"]
+    repeat_penalty: float = DEFAULTS["repeat_penalty"]
     n_threads: int = DEFAULTS["n_threads"]
     n_batch: int = DEFAULTS["n_batch"]
     n_gpu_layers: int = DEFAULTS["n_gpu_layers"]
