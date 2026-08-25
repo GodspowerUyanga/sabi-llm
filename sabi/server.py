@@ -4,28 +4,34 @@ Serves a professional chat UI (ChatGPT/Claude-style) with persistent history,
 backed by the SABI runtime. Flask is an optional dependency installed via
 ``pip install "sabi-llm[serve]"``.
 
+sabi serve is a Coding Assistant: code generation, debugging, and programming
+tutoring. It never creates, writes, edits, or moves files on the user's
+machine — unlike `sabi run`/`sabi agent`/the TUI, every agent-mode request
+here runs AgentLoop(restricted=True) (see agent.py), so code the assistant
+produces is returned in the reply as text, not saved to disk.
+
 Modes per message:
   * auto   - the default and the main way to use sabi serve: unambiguous
              small talk gets a plain conversational reply, anything else
-             gets full agent power automatically (filesystem access,
-             create/edit/move files and folders, run commands, build whole
-             projects) — the same capability `sabi run`'s terminal UI has,
-             with no separate mode selection needed. Auto-approves actions
+             gets the restricted agent automatically (read/search files and
+             run commands to help debug, but never create/write/edit/move
+             one) — no separate mode selection needed. Auto-approves actions
              in the browser, so the UI shows a warning and lists what was
              done.
   * think  - planning / analysis engine, text-only (no filesystem access)
   * code   - code generation engine, text-only (no filesystem access)
-  * agent  - explicitly force the agent loop even for small talk (rarely
-             needed now that auto does this automatically; kept for
-             power users who want to be certain a message is acted on)
+  * agent  - explicitly force the (restricted) agent loop even for small
+             talk (rarely needed now that auto does this automatically; kept
+             for power users who want to be certain a message is acted on)
 """
 
 from __future__ import annotations
 
+import queue
 import webbrowser
 from pathlib import Path
 from threading import Thread, Timer
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .config import Config, load_config
 from .runtime import Runtime
@@ -75,6 +81,43 @@ def _history_for_agent(store: Optional[ConversationStore], cid: Optional[str]) -
     return [{"role": m["role"], "content": m["content"]} for m in prior[-8:]]
 
 
+class _StreamReporter(Reporter):
+    """Feeds an agent turn's tool-call progress into a queue as it happens,
+    so /api/chat/stream can show it live instead of blocking silently until
+    the whole multi-step turn is done — the actual source of "slow" for a
+    request that needs a few tool calls before it can answer.
+    """
+
+    def __init__(self, q: "queue.Queue"):
+        self.q = q
+        self.started = False
+        # True the moment any real answer text has been streamed live via
+        # answer_delta — the caller uses this to skip re-sending the whole
+        # answer again once the turn is done (see generate_agent() below).
+        self.answer_started = False
+
+    def _line(self, text: str) -> None:
+        prefix = "**Actions taken:**\n" if not self.started else ""
+        self.started = True
+        self.q.put(prefix + text)
+
+    def proposing(self, tool: str, desc: str) -> None:
+        self._line(f"- {desc}\n")
+
+    def ran(self, ok: bool, output: str) -> None:
+        preview = (output or "").strip().splitlines()[0][:200] if output else ""
+        mark = "✅" if ok else "❌"
+        self.q.put(f"  {mark}" + (f" {preview}" if preview else "") + "\n")
+
+    def denied(self, desc: str) -> None:
+        self._line(f"- DENIED: {desc}\n")
+
+    def answer_delta(self, text: str) -> None:
+        prefix = "\n\n" if not self.answer_started and self.started else ""
+        self.answer_started = True
+        self.q.put(prefix + text)
+
+
 def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None,
             yoruba: bool = False, store: Optional[ConversationStore] = None) -> dict:
     """Produce an assistant reply for a message in the given mode.
@@ -99,17 +142,18 @@ def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None
         if mode == "agent":
             perms = PermissionManager(auto_approve=True)  # web auto-approves
             res = runtime.agent(msg, permissions=perms, reporter=Reporter(), force_yoruba=yoruba,
-                                history=_history_for_agent(store, cid))
+                                history=_history_for_agent(store, cid), restricted=True)
             return {"answer": res.get("answer", ""), "intent": "AGENT",
                     "tps": 0, "actions": res.get("actions", [])}
         # auto: unambiguous small talk stays a plain, tool-free chat reply;
-        # anything else gets full agent power (filesystem access, create/edit/
-        # move files and folders, run commands) automatically — no separate
-        # "Agent" mode selection needed for SABI to actually act. Small talk
-        # is still hard-gated away from the tool loop for the same reason as
-        # the TUI/chat CLI: a bare "hello" reaching the agent loop has, on
-        # this size of model, resulted in an invented/executed destructive
-        # tool call.
+        # anything else gets the restricted agent (Coding Assistant: code
+        # generation, debugging, programming tutoring — read/search files and
+        # run commands to help debug, but never create/write/edit/move one)
+        # automatically — no separate "Agent" mode selection needed for SABI
+        # to actually act. Small talk is still hard-gated away from the tool
+        # loop for the same reason as the TUI/chat CLI: a bare "hello"
+        # reaching the agent loop has, on this size of model, resulted in an
+        # invented/executed destructive tool call.
         if is_smalltalk(msg):
             res = runtime.handle(msg, force_yoruba=yoruba)
             if res.get("ok"):
@@ -119,7 +163,7 @@ def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None
                     "intent": res.get("intent", "CHAT"), "actions": []}
         perms = PermissionManager(auto_approve=True)  # web auto-approves
         res = runtime.agent(msg, permissions=perms, reporter=Reporter(), force_yoruba=yoruba,
-                            history=_history_for_agent(store, cid))
+                            history=_history_for_agent(store, cid), restricted=True)
         return {"answer": res.get("answer", ""), "intent": "AGENT",
                 "tps": 0, "actions": res.get("actions", [])}
     except Exception as exc:  # noqa: BLE001
@@ -209,19 +253,21 @@ def create_app(runtime: Runtime, store: ConversationStore):
         })
         return jsonify({"conversation_id": cid, **result})
 
-    # ---- chat (one endpoint, two internal paths) ----
-    # Real token-by-token streaming only applies to a plain chat reply — a
-    # multi-step agent turn's tool-call JSON can't stream meaningfully
-    # (there's nothing sensible to show mid-tool-call), and a Yoruba reply
-    # needs the complete English text before it can even be translated. So:
-    # unambiguous small talk in "auto" mode (the common case — greetings,
-    # quick questions) streams for real, live, as it's generated; everything
-    # else (a real request auto routes to the agent, explicit agent/think/
-    # code modes, any Yoruba turn) runs once via _answer() — the same logic
-    # /api/chat uses — and sends the finished result back through this same
-    # streaming response shape in a few chunks, so the UI still gets an
-    # incremental-looking reply instead of one silent wait-then-snap, and the
-    # frontend only needs the one code path regardless of mode.
+    # ---- chat (one endpoint, several internal paths, all streamed live) ----
+    # Every path here streams real, incremental output as soon as it exists —
+    # nothing waits for a fully-finished answer before sending the first
+    # byte. THINK/CODE and small-talk CHAT stream token-by-token straight
+    # from the model. An agent turn (explicit "agent" mode, or a real
+    # request auto-routed to it) runs in a background thread: a Reporter
+    # pushes each tool call onto a queue the instant it happens, so progress
+    # ("- read a file: ...") appears live while the loop is still running —
+    # and even the final answer itself streams token-by-token as it's
+    # generated (AgentLoop._chat_step/_JSONFinalStreamer decode it live out
+    # of the {"final": "..."} JSON wrapper json_mode requires), not just
+    # flushed once at the end. The one case that still can't stream live is
+    # a Yoruba reply — translation needs the complete English text first —
+    # so that runs once via _answer() and sends the finished result back in
+    # a few chunks.
     @app.post("/api/chat/stream")
     def chat_stream():
         from flask import Response, stream_with_context
@@ -243,13 +289,38 @@ def create_app(runtime: Runtime, store: ConversationStore):
             resp.headers["Cache-Control"] = "no-cache"
             return resp
 
+        ctx = _file_context(cid)
+        msg = message + ("\n\n" + ctx if ctx else "")
+
+        # THINK/CODE: plain text-only engines, no filesystem/agent involved —
+        # always stream for real (yoruba isn't wired up for these modes, same
+        # as the existing non-streaming behaviour in _answer()).
+        if mode in ("think", "code"):
+            engine = runtime.think if mode == "think" else runtime.code
+
+            def generate_engine():
+                buf = ""
+                try:
+                    streamed = False
+                    for delta in engine.stream(msg):
+                        streamed = True
+                        buf += delta
+                        yield delta
+                    if not streamed:
+                        buf = engine.run(msg).text
+                        yield buf
+                except Exception as exc:  # noqa: BLE001 (includes ModelUnavailable)
+                    err = f"\n\n⚠ {exc}"
+                    buf += err
+                    yield err
+                store.add_message(cid, "assistant", buf, meta={"intent": mode.upper()})
+            return _stream(generate_engine())
+
         fast_chat = mode == "auto" and not yoruba and is_smalltalk(message)
         if fast_chat:
-            ctx = _file_context(cid)
             system = runtime.prompts.get("system", "") or None
-            user = message + ("\n\n" + ctx if ctx else "")
             messages = ([{"role": "system", "content": system}] if system else []) + \
-                [{"role": "user", "content": user}]
+                [{"role": "user", "content": msg}]
 
             def generate_fast():
                 buf = ""
@@ -260,7 +331,7 @@ def create_app(runtime: Runtime, store: ConversationStore):
                         buf += delta
                         yield delta
                     if not streamed:
-                        buf = runtime.model.generate(user, system=system).text
+                        buf = runtime.model.generate(msg, system=system).text
                         yield buf
                 except Exception as exc:  # noqa: BLE001 (includes ModelUnavailable)
                     err = f"\n\n⚠ {exc}"
@@ -268,6 +339,51 @@ def create_app(runtime: Runtime, store: ConversationStore):
                     yield err
                 store.add_message(cid, "assistant", buf, meta={"intent": "CHAT"})
             return _stream(generate_fast())
+
+        needs_agent = mode == "agent" or (mode == "auto" and not is_smalltalk(message))
+        if needs_agent and not yoruba:
+            def generate_agent():
+                q: "queue.Queue[Optional[str]]" = queue.Queue()
+                reporter = _StreamReporter(q)
+                result: Dict[str, Any] = {}
+
+                def worker():
+                    try:
+                        perms = PermissionManager(auto_approve=True)  # web auto-approves
+                        result["res"] = runtime.agent(
+                            msg, permissions=perms, reporter=reporter,
+                            history=_history_for_agent(store, cid), restricted=True,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        result["error"] = str(exc)
+                    finally:
+                        q.put(None)  # sentinel: worker is done
+
+                Thread(target=worker, daemon=True).start()
+                while True:
+                    item = q.get()
+                    if item is None:
+                        break
+                    yield item
+
+                if "error" in result:
+                    err = result["error"]
+                    yield f"\n\n⚠ {err}"
+                    store.add_message(cid, "assistant", "", meta={"intent": "AGENT", "error": err})
+                    return
+                res = result.get("res", {})
+                answer = res.get("answer") or res.get("error") or "(no response)"
+                # Usually already streamed live, word by word, via
+                # reporter.answer_delta as the model generated it — only
+                # send it now as a fallback (e.g. max-steps/repeat-call
+                # termination) when nothing was streamed for this turn.
+                if not reporter.answer_started:
+                    yield ("\n\n" if reporter.started else "") + answer
+                store.add_message(cid, "assistant", answer, meta={
+                    "intent": "AGENT", "tps": 0, "actions": res.get("actions", []),
+                    "error": res.get("error"),
+                })
+            return _stream(generate_agent())
 
         def generate_full():
             result = _answer(runtime, message, mode, cid=cid, yoruba=yoruba, store=store)

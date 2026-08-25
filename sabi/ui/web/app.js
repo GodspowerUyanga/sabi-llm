@@ -15,7 +15,6 @@
     title: $("#conv-title"),
     mode: $("#mode"),
     yorubaToggle: $("#yoruba-toggle"),
-    agentWarn: $("#agent-warning"),
     modelDot: $("#model-dot"),
     modelLabel: $("#model-label"),
     chips: $("#chips"),
@@ -340,10 +339,6 @@
   };
   els.mode.onchange = () => {
     state.mode = els.mode.value;
-    // "auto" acts on real requests now too (see send()), so it carries the
-    // same filesystem-access warning as "agent" — only think/code are
-    // text-only and don't touch the filesystem.
-    els.agentWarn.classList.toggle("hidden", state.mode === "think" || state.mode === "code");
   };
   els.yorubaToggle.onclick = () => {
     state.yoruba = !state.yoruba;

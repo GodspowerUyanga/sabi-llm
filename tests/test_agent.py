@@ -37,6 +37,15 @@ class FakeModel:
         self.calls += 1
         return FakeGen(text=reply)
 
+    def chat_stream(self, messages, **kwargs):
+        """Yield the same scripted reply one character at a time, so
+        restricted mode's _chat_step (which always streams) exercises the
+        real _JSONFinalStreamer character-by-character, same as live text."""
+        reply = self.replies[min(self.calls, len(self.replies) - 1)]
+        self.calls += 1
+        for ch in reply:
+            yield ch
+
 
 # ----------------------------------------------------------------- parser
 def test_parse_plain_prose_is_none():
@@ -277,6 +286,133 @@ def test_agent_respects_denial(tmp_path):
     assert res.ok
     assert not (tmp_path / "secret").exists()
     assert any("DENIED" in a for a in res.actions)
+
+
+# ------------------------------------------------------- restricted mode
+# sabi serve's Coding Assistant persona: code generation, debugging and
+# programming tutoring only — never touches the user's filesystem.
+def test_executor_restricted_blocks_mutating_tools(tmp_path):
+    ex = ToolExecutor(tmp_path, restricted=True)
+    for tool, args in [
+        ("create_dir", {"path": "x"}),
+        ("write_file", {"path": "x.py", "content": "print(1)"}),
+        ("move_file", {"src": "a", "dest": "b"}),
+    ]:
+        ok, msg = ex.execute(tool, args)
+        assert not ok
+        assert "Coding Assistant" in msg
+    assert not (tmp_path / "x").exists()
+    assert not (tmp_path / "x.py").exists()
+
+
+def test_executor_restricted_blocks_edit_of_existing_file(tmp_path):
+    f = tmp_path / "existing.py"
+    f.write_text("a = 1\n")
+    ex = ToolExecutor(tmp_path, restricted=True)
+    ok, msg = ex.execute("edit_file", {"path": "existing.py", "old_string": "a = 1",
+                                       "new_string": "a = 2"})
+    assert not ok
+    assert "Coding Assistant" in msg
+    assert f.read_text() == "a = 1\n"
+
+
+def test_executor_restricted_allows_reads(tmp_path):
+    (tmp_path / "hi.py").write_text("print('hi')\n")
+    ex = ToolExecutor(tmp_path, restricted=True)
+    ok, out = ex.execute("read_file", {"path": "hi.py"})
+    assert ok and "hi" in out
+    ok, out = ex.execute("list_dir", {"path": "."})
+    assert ok and "hi.py" in out
+
+
+def test_executor_restricted_blocks_shell_file_writes(tmp_path):
+    ex = ToolExecutor(tmp_path, restricted=True)
+    ok, msg = ex.execute("run_shell", {"command": "echo hi > sneaky.py"})
+    assert not ok
+    assert "Coding Assistant" in msg
+    assert not (tmp_path / "sneaky.py").exists()
+
+
+def test_executor_restricted_still_runs_plain_shell(tmp_path):
+    ex = ToolExecutor(tmp_path, restricted=True)
+    ok, out = ex.execute("run_shell", {"command": "echo hi"})
+    assert ok
+    assert "hi" in out
+
+
+def test_agent_restricted_refuses_write_file_and_still_answers(tmp_path):
+    model = FakeModel([
+        '{"tool": "write_file", "args": {"path": "main.py", "content": "print(1)"}}',
+        '{"final": "```python\\nprint(1)\\n```"}',
+    ])
+    pm = PermissionManager(auto_approve=True)
+    loop = AgentLoop(model, pm, system_prompt="sys", cwd=tmp_path, restricted=True)
+    res = loop.run("write me a script that prints 1")
+    assert res.ok
+    assert not (tmp_path / "main.py").exists()
+    assert any("FAIL" in a for a in res.actions)
+    assert "print(1)" in res.answer
+
+
+def test_agent_restricted_ignores_passed_system_prompt():
+    # Runtime always passes prompts/agent.txt (the full file-creating prompt);
+    # restricted=True must override it with RESTRICTED_AGENT_PROMPT regardless.
+    from sabi.agent import RESTRICTED_AGENT_PROMPT
+    model = FakeModel(['{"final": "hi"}'])
+    pm = PermissionManager(auto_approve=True)
+    loop = AgentLoop(model, pm, system_prompt="you can write_file anything", restricted=True)
+    assert loop.system_prompt == RESTRICTED_AGENT_PROMPT
+
+
+# --------------------------------------------------- live streaming (restricted)
+def test_json_final_streamer_decodes_live_and_unescapes():
+    from sabi.agent import _JSONFinalStreamer
+    ex = _JSONFinalStreamer()
+    seen = ""
+    for ch in '{"final": "line1\\nline2 \\"quoted\\""}':
+        ex.feed(ch)
+        seen += ex.take_ready()
+    assert seen == 'line1\nline2 "quoted"'
+    assert ex.full_text == '{"final": "line1\\nline2 \\"quoted\\""}'
+
+
+def test_json_final_streamer_stays_silent_for_tool_calls():
+    from sabi.agent import _JSONFinalStreamer
+    ex = _JSONFinalStreamer()
+    seen = ""
+    reply = '{"tool": "search_files", "args": {"pattern": "login"}}'
+    for ch in reply:
+        ex.feed(ch)
+        seen += ex.take_ready()
+    assert seen == ""  # never leaks raw tool-call JSON
+    assert ex.full_text == reply  # full raw text still collected for parsing
+
+
+def test_agent_restricted_streams_final_answer_live():
+    # The point of restricted mode's streaming: the answer should arrive to
+    # the reporter piece by piece as it's generated, not as one blob at the
+    # end — this is what lets sabi serve show the first word immediately.
+    model = FakeModel(['{"final": "hello world"}'])
+    pm = PermissionManager(auto_approve=True)
+
+    class RecordingReporter:
+        def __init__(self):
+            self.pieces = []
+        def thinking(self): ...
+        def proposing(self, tool, desc): ...
+        def ran(self, ok, output): ...
+        def denied(self, desc): ...
+        def final(self, text): ...
+        def answer_delta(self, text):
+            self.pieces.append(text)
+
+    reporter = RecordingReporter()
+    loop = AgentLoop(model, pm, cwd=".", reporter=reporter, restricted=True)
+    res = loop.run("say hello")
+    assert res.ok
+    assert res.answer == "hello world"
+    assert len(reporter.pieces) > 1  # streamed in multiple pieces, not one blob
+    assert "".join(reporter.pieces) == "hello world"
 
 
 class FakeRetriever:

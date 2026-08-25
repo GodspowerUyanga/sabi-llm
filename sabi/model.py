@@ -201,11 +201,18 @@ class LLMModel:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         stop: Optional[List[str]] = None,
+        json_mode: bool = False,
     ):
-        """Yield text deltas as they are generated (for a live, fast feel)."""
+        """Yield text deltas as they are generated (for a live, fast feel).
+
+        ``json_mode`` grammar-constrains the stream to a valid JSON object,
+        same as :meth:`chat` — the constraint applies per-token, so streaming
+        still works; used by AgentLoop to stream a restricted turn's final
+        answer live while it's still inside a ``{"final": "..."}`` wrapper.
+        """
         if not self._loaded and not self.load():
             raise ModelUnavailable(self._load_error or "model not available")
-        stream = self._llm.create_chat_completion(
+        kwargs = dict(
             messages=messages,
             max_tokens=max_tokens or self.config.max_tokens,
             temperature=self.config.temperature if temperature is None else temperature,
@@ -214,6 +221,9 @@ class LLMModel:
             stop=stop or [],
             stream=True,
         )
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        stream = self._llm.create_chat_completion(**kwargs)
         for chunk in stream:
             try:
                 delta = chunk["choices"][0]["delta"].get("content")

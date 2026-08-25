@@ -93,11 +93,6 @@ body {
   background: var(--teal); color: #ffffff; border-color: var(--teal-bright);
 }
 .yoruba-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
-.agent-warning {
-  background: #3a2d12; color: #ecd9a6; border-bottom: 1px solid #5a4a1f;
-  padding: 9px 22px; font-size: 12.5px;
-}
-.agent-warning code { background: #00000033; padding: 1px 5px; border-radius: 4px; }
 .hidden { display: none !important; }
 
 /* ---------------- Messages ---------------- */

@@ -20,11 +20,12 @@ import json
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .model import LLMModel, ModelUnavailable
+from .model import Generation, LLMModel, ModelUnavailable
 from .permissions import PermissionManager
 
 MAX_STEPS = 24  # multi-file project scaffolds (several write_file calls) plus a
@@ -47,6 +48,16 @@ _SHELL_DENY = (
 # after finishing an unrelated task. \b...\b keeps this from matching inside
 # unrelated words ("confirm", "warm", "term").
 _DELETE_CMD_RE = re.compile(r"\b(rm|rmdir|del|unlink|shred)\b", re.IGNORECASE)
+
+# Tools that touch the filesystem — blocked outright in "restricted" mode
+# (sabi serve's Coding Assistant persona: code generation, debugging and
+# programming tutoring only, never file creation/edits on the user's machine).
+_MUTATING_TOOLS = frozenset({"create_dir", "write_file", "edit_file", "move_file"})
+
+# In restricted mode, run_shell stays available (it's how a coding assistant
+# actually runs/debugs code), but the same "no file creation" rule has to
+# hold there too, or it's just a loophole around _MUTATING_TOOLS above.
+_WRITE_SHELL_RE = re.compile(r"(>>?|\btee\b|\btouch\b|\bmkdir\b|\bcp\b|\bmv\b)", re.IGNORECASE)
 
 # Directories skipped when walking a codebase for search/tree — build
 # artifacts, VCS internals and dependency trees are noise and can be huge.
@@ -97,8 +108,11 @@ def _similar_entry(parent: Path, name: str) -> Optional[str]:
 class ToolExecutor:
     """Runs the agent's actions on the real filesystem (relative to ``cwd``)."""
 
-    def __init__(self, cwd: Optional[Path] = None):
+    def __init__(self, cwd: Optional[Path] = None, restricted: bool = False):
         self.cwd = Path(cwd or os.getcwd())
+        # Coding Assistant mode (sabi serve): no create_dir/write_file/
+        # edit_file/move_file, and run_shell refuses write-ish commands too.
+        self.restricted = restricted
 
     def _resolve(self, path: str) -> Path:
         p = Path(os.path.expandvars(os.path.expanduser(str(path))))
@@ -141,6 +155,11 @@ class ToolExecutor:
         return f"{tool}  {args}"
 
     def execute(self, tool: str, args: Dict[str, Any]) -> Tuple[bool, str]:
+        if self.restricted and tool in _MUTATING_TOOLS:
+            return False, (f"'{tool}' is turned off in this mode — this is a Coding Assistant "
+                            "(code generation, debugging, programming tutoring), it does not "
+                            "create, edit, or move files on your machine. Put the code directly "
+                            "in your reply instead.")
         try:
             if tool == "create_dir":
                 p = self._resolve(args["path"])
@@ -192,6 +211,11 @@ class ToolExecutor:
                                     "unlink/shred) are not permitted through run_shell. If the "
                                     "user explicitly asked to delete something, tell them to do "
                                     "it themselves — do not work around this block.")
+                if self.restricted and _WRITE_SHELL_RE.search(cmd):
+                    return False, ("Blocked: this Coding Assistant mode can run commands to help "
+                                    "debug, but not to create/write/move files (redirects, tee, "
+                                    "touch, mkdir, cp, mv). Put the file's contents in your reply "
+                                    "instead.")
                 proc = subprocess.run(cmd, shell=True, cwd=str(self.cwd),
                                       capture_output=True, text=True, timeout=120)
                 out = ((proc.stdout or "") + (proc.stderr or "")).strip()
@@ -327,6 +351,73 @@ class Reporter:
     def ran(self, ok: bool, output: str) -> None: ...
     def denied(self, desc: str) -> None: ...
     def final(self, text: str) -> None: ...
+    def answer_delta(self, text: str) -> None:
+        """A piece of the final answer, as soon as it's decoded off the live
+        model stream (restricted mode only — see _JSONFinalStreamer). Default
+        is silent; a caller that wants real token-by-token final-answer
+        streaming (sabi serve) overrides this."""
+        ...
+
+
+class _JSONFinalStreamer:
+    """Incrementally decodes a streaming ``{"final": "..."}`` reply so its
+    answer text can be shown live, token by token, while it's still being
+    generated inside the JSON wrapper json_mode requires.
+
+    Feed raw model deltas to :meth:`feed`, drain newly-decoded characters
+    with :meth:`take_ready` after each feed. If the reply turns out to be a
+    ``{"tool": ...}`` call (or anything else) instead, nothing is ever
+    emitted — detected within the first few characters, so tool-call JSON
+    never leaks to the user. Either way, :attr:`full_text` holds the raw
+    text accumulated so far, unaffected by this — the loop still parses that
+    with the normal parse_tool_call/parse_final for correctness; this class
+    only ever feeds an ADDITIONAL, best-effort live preview, never the
+    authoritative answer.
+    """
+
+    _PREFIX = '{"final":"'
+
+    def __init__(self) -> None:
+        self.full_text = ""
+        self._mode: Optional[str] = None  # None (sniffing) -> "final" -> "done", or "other"
+        self._escape = False
+        self._ready: List[str] = []
+        self._key_buf = ""
+
+    def feed(self, delta: str) -> None:
+        self.full_text += delta
+        for ch in delta:
+            self._feed_char(ch)
+
+    def take_ready(self) -> str:
+        s = "".join(self._ready)
+        self._ready.clear()
+        return s
+
+    def _feed_char(self, ch: str) -> None:
+        if self._mode is None:
+            if not self._key_buf and ch.isspace():
+                return  # tolerate leading whitespace before the opening brace
+            self._key_buf += ch
+            stripped = "".join(self._key_buf.split())
+            if stripped == self._PREFIX:
+                self._mode = "final"  # the char that completed this WAS the opening quote
+            elif not self._PREFIX.startswith(stripped):
+                self._mode = "other"
+            return
+        if self._mode != "final":
+            return
+        if self._escape:
+            self._ready.append({"n": "\n", "t": "\t", "r": "\r"}.get(ch, ch))
+            self._escape = False
+            return
+        if ch == "\\":
+            self._escape = True
+            return
+        if ch == '"':
+            self._mode = "done"
+            return
+        self._ready.append(ch)
 
 
 # ------------------------------------------------------------------- parser
@@ -414,11 +505,17 @@ class AgentLoop:
         keep_history: bool = True,
         retriever: Optional[Any] = None,
         initial_history: Optional[List[dict]] = None,
+        restricted: bool = False,
     ):
         self.model = model
         self.permissions = permissions
-        self.system_prompt = system_prompt or DEFAULT_AGENT_PROMPT
-        self.executor = ToolExecutor(cwd)
+        self.restricted = restricted
+        # Restricted (sabi serve's Coding Assistant persona) always uses its
+        # own prompt, overriding whatever the caller passed in — Runtime
+        # normally passes prompts/agent.txt (the full file-creating prompt),
+        # which would contradict a restricted ToolExecutor if used as-is.
+        self.system_prompt = RESTRICTED_AGENT_PROMPT if restricted else (system_prompt or DEFAULT_AGENT_PROMPT)
+        self.executor = ToolExecutor(cwd, restricted=restricted)
         self.reporter = reporter or Reporter()
         self.max_steps = max_steps
         self.keep_history = keep_history
@@ -508,6 +605,27 @@ class AgentLoop:
             except Exception:
                 pass
 
+    def _chat_step(self, messages: List[dict]) -> Generation:
+        """One model turn. Restricted mode (sabi serve) streams it live —
+        while the reply is still {"tool": ...} or {"final": "..."} JSON, a
+        _JSONFinalStreamer decodes and forwards ONLY the "final" answer's
+        text to self.reporter.answer_delta as it resolves, so the user sees
+        it appear as it's generated instead of waiting for the whole
+        multi-step turn to finish. Unrestricted callers (`sabi run`/`sabi
+        agent`/the TUI) keep the original non-streaming call unchanged.
+        """
+        if not self.restricted:
+            return self.model.chat(messages, temperature=0.1, json_mode=True)
+        t0 = time.perf_counter()
+        extractor = _JSONFinalStreamer()
+        for delta in self.model.chat_stream(messages, temperature=0.1, json_mode=True):
+            extractor.feed(delta)
+            piece = extractor.take_ready()
+            if piece:
+                self.reporter.answer_delta(piece)
+        return Generation(text=extractor.full_text.strip(), prompt_tokens=0,
+                          completion_tokens=0, elapsed_s=time.perf_counter() - t0)
+
     def run(self, request: str, context: str = "") -> AgentResult:
         messages = [{"role": "system", "content": self._system(context)}]
         messages += self.history
@@ -561,7 +679,7 @@ class AgentLoop:
                 # 3B model still narrated code as prose instead of emitting the
                 # write_file call — confirmed by live testing 2026-08-13/14.
                 # json_mode structurally rules that failure mode out.)
-                gen = self.model.chat(messages, temperature=0.1, json_mode=True)
+                gen = self._chat_step(messages)
             except ModelUnavailable as exc:
                 result.error = str(exc)
                 return result
@@ -665,6 +783,51 @@ Examples:
 - after list_dir/read_file/search_files: your NEXT reply must be {"final": ...} stating the actual result (file names, matched lines, contents) by name — not a repeat lookup, and not "I checked it" without saying what was found.
 
 Never say you can't access files — you can, via the tools above. Never state a file/folder's contents or existence unless a TOOL RESULT for that exact path already appeared in this conversation.
+
+Current working directory: {cwd}
+Home directory: {home}
+"""
+
+
+# sabi serve's persona: a Coding Assistant — code generation, debugging, and
+# programming tutoring. Unlike DEFAULT_AGENT_PROMPT above (used by `sabi run`/
+# `sabi agent`/the TUI), it must never claim or attempt to create, write,
+# edit, or move files on the user's machine — restricted=True on ToolExecutor
+# enforces that at the code level; this prompt just keeps the model from
+# trying tools that no longer exist here.
+RESTRICTED_AGENT_PROMPT = """You are SABI's Coding Assistant — code generation, debugging, and programming tutoring. You do NOT create, write, edit, move, or delete files, and you make no other change to the user's machine: there is no create_dir/write_file/edit_file/move_file tool here, and run_shell refuses write/move/create commands too. You are a capable coding assistant, not a file-system agent.
+
+EVERY reply is exactly one JSON object, nothing else: {"tool": "<name>", "args": {...}} to act, or {"final": "<answer, may include ```lang code```>"} to finish. Never bare prose or bare code.
+
+Tools (use EXACTLY these names — nothing else exists here):
+- read_file(path, offset=None, limit=200) — read a file already on this machine; use offset/limit for files longer than ~200 lines.
+- list_dir(path) — list one folder level.
+- search_files(pattern, path=".", glob=None) — regex-search file contents across a codebase. Use this first to find where something lives instead of guessing.
+- run_shell(command) — run a command to help debug (e.g. run a script, run tests, check a version). Commands that write, move, or create files are refused.
+
+After a tool runs you get its result, then call another tool or reply {"final": ...}.
+
+Hard rules, no exceptions:
+1. Never write to disk, and never say you did. When the user wants code — a new script, a fix, a whole project — put the COMPLETE code directly in your {"final": ...} reply as fenced ```lang code``` blocks for them to save themselves. Do not claim to have created, saved, or edited a file.
+2. Default to answering directly with {"final": ...} and NO tool call. A tool call is the exception, only for when the user points at something that already exists on their machine — a specific file/path they named, an error/stack trace they pasted, or "this codebase". Generic questions, "how do I get started with X", explanations, and writing new code from scratch never need a tool — you already know the answer, just answer it.
+3. Never call search_files (or any tool) with a guessed or empty argument. If you don't have a concrete file path or search pattern from what the user actually said, don't call the tool — answer directly instead.
+4. Bare greeting/pleasantry ("hi", "thanks", "how are you") -> {"final": "..."} only, never a tool call.
+5. One JSON object per reply. Stop with {"final": ...} the moment you have the answer — no repeat lookups "to double-check", no extra steps nobody asked for.
+
+Debugging: only when the user shares an error, a stack trace, or names a file that already exists, use read_file/search_files/run_shell to find and reproduce the problem, then explain the cause and give the corrected code in your final reply.
+
+Tutoring: explain the concept clearly, at the level the question implies, with example code inline in your reply — directly, no tool call, even for "how do I start learning X" or "what's the best way to Y".
+
+Paths: always ABSOLUTE for read_file/list_dir/search_files. "~"/{home} is home. Only use {cwd} when the user gives no location.
+
+Examples:
+- "hi" -> {"final": "Hello! What would you like to work on?"}
+- "write me a python function that reverses a string" -> {"final": "```python\\ndef reverse(s):\\n    return s[::-1]\\n```"}
+- "how do I get started learning python" -> {"final": "..."} (no tool — this is tutoring, not a lookup on their machine)
+- "why does my login function fail" (a real file in this project) -> {"tool": "search_files", "args": {"path": "{cwd}", "pattern": "login"}}
+- after list_dir/read_file/search_files: your NEXT reply must be {"final": ...} stating the actual result and, if a fix is needed, the corrected code — not a repeat lookup.
+
+Never say you can't read or search files — you can, via the tools above. You just can't write, create, move, or delete anything.
 
 Current working directory: {cwd}
 Home directory: {home}

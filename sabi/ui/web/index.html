@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SABI — Offline AI Coworker</title>
+  <title>SABI — Coding Assistant</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
@@ -12,7 +12,7 @@
     <aside id="sidebar">
       <div class="side-head">
         <div class="logo">SABI</div>
-        <div class="logo-sub">Offline AI Coworker</div>
+        <div class="logo-sub">Coding Assistant</div>
       </div>
       <button id="new-chat" class="new-chat">+ New chat</button>
       <div id="conv-list" class="conv-list"></div>
@@ -39,19 +39,12 @@
         </div>
       </header>
 
-      <div id="agent-warning" class="agent-warning">
-        ⚠ SABI can create/edit/move files and run commands on this machine for real
-        requests, and auto-approves them here in the browser (no per-action confirmation,
-        unlike <code>sabi run</code>'s terminal UI). Switch to Think/Code mode for
-        text-only replies with no filesystem access.
-      </div>
-
       <section id="messages" class="messages">
         <div id="empty" class="empty">
           <div class="empty-logo">SABI</div>
           <p class="empty-title">How can I help you today?</p>
           <div class="suggestions">
-            <button class="sugg">Create a Python project that reverses a string</button>
+            <button class="sugg">Write a Python function that reverses a string</button>
             <button class="sugg">Find and fix the bug in this codebase</button>
             <button class="sugg">Write a PRD for an offline invoicing app</button>
             <button class="sugg">Explain how RAG works in simple terms</button>
@@ -69,7 +62,7 @@
         </div>
         <input id="file-input" type="file" multiple style="display:none"
           accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.tsv,.pptx,.txt,.md,.json,.html,.htm,.png,.jpg,.jpeg,.py,.js" />
-        <div class="composer-hint">SABI runs fully on-device · can create/edit files &amp; run commands · upload files to summarize or analyze them</div>
+        <div class="composer-hint">SABI runs fully on-device · code generation, debugging &amp; programming tutoring · upload files to summarize or analyze them</div>
       </footer>
     </main>
   </div>

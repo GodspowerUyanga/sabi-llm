@@ -140,6 +140,40 @@ def test_auto_mode_routes_real_requests_to_agent(client, monkeypatch):
     assert body["actions"] == ["OK: wrote main.py"]
 
 
+def test_auto_mode_uses_restricted_coding_assistant_agent(client, monkeypatch):
+    # sabi serve is a Coding Assistant (code generation, debugging,
+    # programming tutoring) — it must never let AgentLoop create/write/edit/
+    # move files, so every call into Runtime.agent from here has to pass
+    # restricted=True.
+    import sabi.server as server_mod
+    captured = {}
+
+    def fake_agent(self, *a, **k):
+        captured["restricted"] = k.get("restricted")
+        return {"ok": True, "answer": "done", "actions": []}
+
+    monkeypatch.setattr(server_mod.Runtime, "agent", fake_agent)
+    r = client.post("/api/chat", json={"message": "write me a script that prints hello",
+                                        "mode": "auto"})
+    assert r.status_code == 200
+    assert captured["restricted"] is True
+
+
+def test_agent_mode_uses_restricted_coding_assistant_agent(client, monkeypatch):
+    import sabi.server as server_mod
+    captured = {}
+
+    def fake_agent(self, *a, **k):
+        captured["restricted"] = k.get("restricted")
+        return {"ok": True, "answer": "done", "actions": []}
+
+    monkeypatch.setattr(server_mod.Runtime, "agent", fake_agent)
+    r = client.post("/api/chat", json={"message": "write me a script that prints hello",
+                                        "mode": "agent"})
+    assert r.status_code == 200
+    assert captured["restricted"] is True
+
+
 def test_auto_mode_passes_prior_conversation_as_history(client, monkeypatch):
     # Regression test for a real incident: a follow-up like "list them" had
     # zero context of what "them" referred to, because sabi serve built a
@@ -248,21 +282,81 @@ def test_stream_endpoint_uses_real_streaming_for_smalltalk(client, monkeypatch):
     assert "hi there" in body
 
 
-def test_stream_endpoint_uses_agent_path_for_real_requests(client, monkeypatch):
-    # A real request in auto mode must NOT take the fast token-stream path
-    # (it needs the full agent loop) — confirms _answer() is called instead.
-    import sabi.server as server_mod
-    calls = {"answer": 0}
+def test_stream_endpoint_streams_think_mode_for_real(client, monkeypatch):
+    # think/code are plain text-only engines — no reason to buffer-then-chunk
+    # them; they should stream token-by-token straight from the model.
+    import sabi.runtime as runtime_mod
+    calls = {"stream": 0}
 
-    def fake_answer(*a, **k):
-        calls["answer"] += 1
-        return {"answer": "created it", "intent": "AGENT", "tps": 0,
-                "actions": ["OK: wrote main.py"]}
-    monkeypatch.setattr(server_mod, "_answer", fake_answer)
+    def fake_stream(self, request, context=""):
+        calls["stream"] += 1
+        yield "here"
+        yield " is the plan"
+
+    monkeypatch.setattr(runtime_mod.ThinkEngine, "stream", fake_stream)
+    r = client.post("/api/chat/stream", json={"message": "plan a todo app", "mode": "think"})
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert calls["stream"] == 1
+    assert "here is the plan" in body
+
+
+def test_stream_endpoint_streams_code_mode_for_real(client, monkeypatch):
+    import sabi.runtime as runtime_mod
+    calls = {"stream": 0}
+
+    def fake_stream(self, request, context="", plan=""):
+        calls["stream"] += 1
+        yield "def f():"
+        yield " pass"
+
+    monkeypatch.setattr(runtime_mod.CodeEngine, "stream", fake_stream)
+    r = client.post("/api/chat/stream", json={"message": "write a function", "mode": "code"})
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert calls["stream"] == 1
+    assert "def f(): pass" in body
+
+
+def test_stream_endpoint_uses_agent_path_for_real_requests(client, monkeypatch):
+    # A real request in auto mode must NOT take the fast token-stream path —
+    # it goes through Runtime.agent (restricted), and must stream tool-call
+    # progress live via the reporter as it happens rather than buffering the
+    # whole turn before sending anything.
+    import sabi.server as server_mod
+    calls = {"agent": 0}
+
+    def fake_agent(self, msg, *, permissions=None, reporter=None, **k):
+        calls["agent"] += 1
+        reporter.proposing("write_file", "write a file: main.py")
+        reporter.ran(False, "'write_file' is turned off in this mode")
+        return {"answer": "created it", "actions": ["FAIL: write a file: main.py"]}
+
+    monkeypatch.setattr(server_mod.Runtime, "agent", fake_agent)
     r = client.post("/api/chat/stream",
                     json={"message": "create a file main.py that prints hello", "mode": "auto"})
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert calls["answer"] == 1
+    assert calls["agent"] == 1
     assert "created it" in body
-    assert "OK: wrote main.py" in body  # actions surfaced inline in the stream
+    assert "write a file: main.py" in body  # progress streamed live as it happens
+
+
+def test_stream_endpoint_streams_agent_final_answer_live_without_duplicating(client, monkeypatch):
+    # AgentLoop streams its final answer live via reporter.answer_delta as
+    # it's generated (see agent.py's _chat_step/_JSONFinalStreamer) — the
+    # whole point being the first word shows up immediately, not after the
+    # full answer is ready. Once that's happened, the server must NOT also
+    # send the complete answer again at the end.
+    import sabi.server as server_mod
+
+    def fake_agent(self, msg, *, permissions=None, reporter=None, **k):
+        for piece in ["Hel", "lo ", "world"]:
+            reporter.answer_delta(piece)
+        return {"answer": "Hello world", "actions": []}
+
+    monkeypatch.setattr(server_mod.Runtime, "agent", fake_agent)
+    r = client.post("/api/chat/stream", json={"message": "say hello", "mode": "auto"})
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert body == "Hello world"  # streamed live, not also re-sent whole afterward

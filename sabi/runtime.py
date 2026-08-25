@@ -229,7 +229,8 @@ class Runtime:
     def make_agent(self, permissions: Optional[PermissionManager] = None,
                    reporter: Optional[Reporter] = None,
                    cwd: Optional[str] = None,
-                   history: Optional[list] = None) -> AgentLoop:
+                   history: Optional[list] = None,
+                   restricted: bool = False) -> AgentLoop:
         """Build a tool-calling agent loop bound to a permission manager.
 
         ``cwd`` defaults to the directory SABI was launched from, so the agent
@@ -240,6 +241,13 @@ class Runtime:
         needed by any caller that builds a fresh AgentLoop per request (sabi
         serve) rather than keeping one alive for the whole session (the TUI,
         the terminal chat loop already do this correctly on their own).
+
+        ``restricted`` is sabi serve's Coding Assistant persona (code
+        generation, debugging, programming tutoring) — no create_dir/
+        write_file/edit_file/move_file, and it overrides
+        ``self.prompts.get("agent", "")`` below with AgentLoop's own
+        restricted prompt, since that file is the full file-creating prompt
+        `sabi run`/`sabi agent`/the TUI use.
         """
         if not self._started:
             self.start(cwd=cwd)
@@ -252,12 +260,13 @@ class Runtime:
             reporter=reporter,
             retriever=self.retriever,
             initial_history=history,
+            restricted=restricted,
         )
 
     def agent(self, request: str, *, permissions: Optional[PermissionManager] = None,
               reporter: Optional[Reporter] = None, cwd: Optional[str] = None,
               use_rag: bool = True, force_yoruba: bool = False,
-              history: Optional[list] = None) -> dict:
+              history: Optional[list] = None, restricted: bool = False) -> dict:
         """Run the agentic loop for a request and return a result dict."""
         if not self._started:
             self.start(cwd=cwd)
@@ -266,7 +275,8 @@ class Runtime:
         yoruba = self._yoruba_status(request, force=force_yoruba)
         effective_request = self._to_english(request) if yoruba == "active" else request
 
-        loop = self.make_agent(permissions=permissions, reporter=reporter, cwd=cwd, history=history)
+        loop = self.make_agent(permissions=permissions, reporter=reporter, cwd=cwd,
+                               history=history, restricted=restricted)
         context = self.retriever.context(effective_request) if use_rag else ""
         res = loop.run(effective_request, context=context)
         answer = res.answer

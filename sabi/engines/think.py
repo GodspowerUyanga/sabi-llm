@@ -18,7 +18,7 @@ class ThinkEngine:
         self.system_prompt = system_prompt
         self.think_prompt = think_prompt
 
-    def run(self, request: str, context: str = "") -> Generation:
+    def _messages(self, request: str, context: str = "") -> list:
         template = self.think_prompt or (
             "You are SABI THINK, a senior business analyst and solutions architect. "
             "Produce a clear, structured plan for the user's request. Use concise "
@@ -28,4 +28,15 @@ class ThinkEngine:
         prompt = template.replace("{request}", request).replace(
             "{context}", f"Relevant context:\n{context}\n" if context else ""
         )
-        return self.model.generate(prompt, system=self.system_prompt or None)
+        messages = []
+        if self.system_prompt:
+            messages.append({"role": "system", "content": self.system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        return messages
+
+    def run(self, request: str, context: str = "") -> Generation:
+        return self.model.chat(self._messages(request, context))
+
+    def stream(self, request: str, context: str = ""):
+        """Yield text deltas as they're generated, for a live, fast feel."""
+        yield from self.model.chat_stream(self._messages(request, context))
