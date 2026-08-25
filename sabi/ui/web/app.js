@@ -128,6 +128,7 @@
     row.innerHTML = '<div class="bubble-wrap">' + av +
       '<div class="bubble">' + body + extra + metaLine + "</div></div>";
     els.messages.appendChild(row);
+    attachCopyButton(row.querySelector(".bubble"), () => content || "");
     scrollDown();
   }
 
@@ -143,6 +144,46 @@
   }
 
   function scrollDown() { els.messages.scrollTop = els.messages.scrollHeight; }
+
+  /* ---------------- Copy-to-clipboard ---------------- */
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      // Fallback for non-secure contexts (e.g. plain http://localhost in some browsers).
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+  }
+
+  function attachCopyButton(bubbleEl, getText) {
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.type = "button";
+    btn.title = "Copy";
+    btn.setAttribute("aria-label", "Copy message");
+    btn.textContent = "⧉";
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const text = getText();
+      if (!text) return;
+      const ok = await copyText(text);
+      btn.classList.toggle("copied", ok);
+      btn.textContent = ok ? "✓" : "⧉";
+      setTimeout(() => { btn.classList.remove("copied"); btn.textContent = "⧉"; }, 1200);
+    };
+    bubbleEl.appendChild(btn);
+    return btn;
+  }
 
   /* ---------------- Actions ---------------- */
   async function loadConversations() {
@@ -215,6 +256,7 @@
       }
       bubble.innerHTML = renderMarkdown(buf) +
         '<div class="meta">CHAT · streamed</div>';
+      attachCopyButton(bubble, () => buf);
       await refreshTitles();
     } catch (e) {
       thinking.remove();

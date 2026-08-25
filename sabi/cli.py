@@ -36,13 +36,13 @@ from . import profiler as profiler_mod
 from . import project_scanner
 
 
-def _runtime() -> Runtime:
-    return Runtime(load_config()).start()
+def _runtime(cwd: str | None = None) -> Runtime:
+    return Runtime(load_config()).start(cwd=cwd)
 
 
 # --------------------------------------------------------------------- commands
 def cmd_run(args) -> int:
-    rt = _runtime()
+    rt = _runtime(getattr(args, "cwd", None))
     _ensure_model(rt)
     # Prefer the full-screen opencode-style TUI when textual is installed,
     # unless the user asked for the simple REPL with --simple.
@@ -62,7 +62,7 @@ def cmd_run(args) -> int:
 
 
 def cmd_tui(args) -> int:
-    rt = _runtime()
+    rt = _runtime(getattr(args, "cwd", None))
     _ensure_model(rt)
     from .ui import tui
     try:
@@ -74,7 +74,7 @@ def cmd_tui(args) -> int:
 
 
 def cmd_chat(args) -> int:
-    rt = _runtime()
+    rt = _runtime(getattr(args, "cwd", None))
     _ensure_model(rt)
     chat_loop(rt, auto_approve=getattr(args, "yes", False),
               cwd=getattr(args, "cwd", None))
@@ -116,7 +116,7 @@ def cmd_code(args) -> int:
 
 
 def cmd_agent(args) -> int:
-    rt = _runtime()
+    rt = _runtime(getattr(args, "cwd", None))
     from .permissions import PermissionManager
     from .ui.chat import _ask_permission, _confirm, ConsoleReporter
     perms = PermissionManager(

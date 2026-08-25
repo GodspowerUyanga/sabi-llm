@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .model import LLMModel, ModelUnavailable
 from .permissions import PermissionManager
 
-MAX_STEPS = 8
+MAX_STEPS = 16  # search -> read -> edit -> verify chains need more room than pure scaffolding
 
 # Shell commands that are never allowed, even with approval.
 _SHELL_DENY = (
@@ -35,9 +35,49 @@ _SHELL_DENY = (
     "> /dev/sd", "chmod -r 777 /", "mkfs.",
 )
 
+# Directories skipped when walking a codebase for search/tree — build
+# artifacts, VCS internals and dependency trees are noise and can be huge.
+_WALK_SKIP_DIRS = {
+    ".git", "node_modules", "__pycache__", ".venv", "venv", "env",
+    "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".next", "target", ".egg-info",
+}
+_MAX_SEARCH_FILE_BYTES = 1_000_000  # skip huge/binary-ish files when grepping
+
+
+def _walk_files(root: Path):
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Hidden dirs (.git, .venv, vendored ".xyz" checkouts, .next, …) are
+        # never what a codebase search means to hit, in any language.
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")
+                       and d not in _WALK_SKIP_DIRS and not d.endswith(".egg-info")]
+        for name in filenames:
+            yield Path(dirpath) / name
+
 
 def _expand(path: str) -> Path:
     return Path(os.path.expandvars(os.path.expanduser(str(path)))).resolve()
+
+
+def _similar_entry(parent: Path, name: str) -> Optional[str]:
+    """If `name` doesn't exist under `parent` but something close does (wrong
+    case, small typo — e.g. asked for "MSc Artificial Intelligence" when the
+    real folder is "MSC ARTIFICIAL INTELLIGENCE"), return the real name.
+
+    Without this, a model that gets a case/spelling detail wrong has no way
+    to notice: create_dir would just silently make a second, empty,
+    near-duplicate folder next to the one the user actually meant.
+    """
+    try:
+        siblings = [c.name for c in parent.iterdir()]
+    except Exception:
+        return None
+    for s in siblings:
+        if s.lower() == name.lower() and s != name:
+            return s
+    import difflib
+    close = difflib.get_close_matches(name, siblings, n=1, cutoff=0.75)
+    return close[0] if close else None
 
 
 # --------------------------------------------------------------------- tools
@@ -67,9 +107,18 @@ class ToolExecutor:
             n = len(args.get("content", "") or "")
             return f"write a file:  {p.as_posix()}  ({n} chars)"
         if tool == "read_file":
-            return f"read a file:  {self._resolve(args.get('path', '')).as_posix()}"
+            p = self._resolve(args.get("path", "")).as_posix()
+            offset = args.get("offset")
+            if offset:
+                return f"read a file:  {p}  (from line {offset}, {args.get('limit', 200)} lines)"
+            return f"read a file:  {p}"
         if tool == "list_dir":
             return f"list a directory:  {self._resolve(args.get('path', '.')).as_posix()}"
+        if tool == "search_files":
+            where = self._resolve(args.get("path", ".")).as_posix()
+            return f"search for '{args.get('pattern', '')}' under  {where}"
+        if tool == "edit_file":
+            return f"edit a file:  {self._resolve(args.get('path', '')).as_posix()}"
         if tool == "run_shell":
             return f"run a shell command:  {args.get('command', '')}"
         return f"{tool}  {args}"
@@ -78,6 +127,12 @@ class ToolExecutor:
         try:
             if tool == "create_dir":
                 p = self._resolve(args["path"])
+                if not p.exists() and p.parent.exists():
+                    similar = _similar_entry(p.parent, p.name)
+                    if similar:
+                        return False, (f"Did not create '{p.name}': a folder named '{similar}' "
+                                       f"already exists here ({p.parent.as_posix()}). If you meant "
+                                       "that folder, use it directly instead of creating a new one.")
                 p.mkdir(parents=True, exist_ok=True)
                 return True, f"Created directory {p.as_posix()}"
             if tool == "write_file":
@@ -88,15 +143,25 @@ class ToolExecutor:
             if tool == "read_file":
                 p = self._resolve(args["path"])
                 if not p.exists():
-                    return False, f"File not found: {p.as_posix()}"
+                    similar = _similar_entry(p.parent, p.name) if p.parent.exists() else None
+                    hint = f" Did you mean '{similar}'?" if similar else ""
+                    return False, f"File not found: {p.as_posix()}.{hint}"
+                if args.get("offset"):
+                    return self._read_file_range(p, args)
                 from .filereader import read_any
-                return True, read_any(p, max_chars=4000)
+                return True, read_any(p)
             if tool == "list_dir":
                 p = self._resolve(args.get("path", "."))
                 if not p.exists():
-                    return False, f"Path not found: {p.as_posix()}"
+                    similar = _similar_entry(p.parent, p.name) if p.parent.exists() else None
+                    hint = f" Did you mean '{similar}'?" if similar else ""
+                    return False, f"Path not found: {p.as_posix()}.{hint}"
                 items = sorted(("d " if c.is_dir() else "f ") + c.name for c in p.iterdir())
                 return True, "\n".join(items) or "(empty)"
+            if tool == "search_files":
+                return self._search_files(args)
+            if tool == "edit_file":
+                return self._edit_file(args)
             if tool == "run_shell":
                 cmd = args["command"]
                 low = cmd.lower()
@@ -113,6 +178,98 @@ class ToolExecutor:
         except Exception as exc:  # noqa: BLE001
             return False, f"{type(exc).__name__}: {exc}"
 
+    def _read_file_range(self, p: Path, args: Dict[str, Any]) -> Tuple[bool, str]:
+        """Read a line window of a text file — how a file bigger than the
+        context budget gets read fully: one window at a time, driven by the
+        line numbers search_files already returned, instead of one blind
+        truncated dump of the whole file."""
+        try:
+            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception as exc:  # noqa: BLE001
+            return False, f"Could not read {p.as_posix()} as text: {exc}"
+        offset = max(1, int(args.get("offset", 1) or 1))
+        limit = max(1, min(int(args.get("limit", 200) or 200), 500))
+        window = lines[offset - 1: offset - 1 + limit]
+        if not window:
+            return False, f"{p.as_posix()} has {len(lines)} lines — offset {offset} is past the end"
+        body = "\n".join(f"{n:>6}\t{line}" for n, line in enumerate(window, start=offset))
+        more = len(lines) - (offset - 1 + len(window))
+        if more > 0:
+            body += f"\n… {more} more line(s); call read_file again with offset={offset + limit} to continue"
+        return True, body
+
+    def _search_files(self, args: Dict[str, Any]) -> Tuple[bool, str]:
+        """Grep-like recursive text search across the codebase.
+
+        Small models can't hold a whole repo in context, so this is how the
+        agent finds *where* something lives before reading or editing it —
+        the step that was missing (only single-file read/list existed).
+        """
+        pattern = args.get("pattern") or args.get("query")
+        if not pattern:
+            return False, "Missing argument 'pattern' for tool search_files"
+        root = self._resolve(args.get("path", "."))
+        if not root.exists():
+            return False, f"Path not found: {root.as_posix()}"
+        glob = args.get("glob")
+        max_results = min(int(args.get("max_results", 50) or 50), 200)
+
+        try:
+            rx = re.compile(pattern)
+        except re.error:
+            rx = re.compile(re.escape(pattern))
+
+        files = [root] if root.is_file() else _walk_files(root)
+        matches: List[str] = []
+        for f in files:
+            if glob and not f.match(glob):
+                continue
+            try:
+                if f.stat().st_size > _MAX_SEARCH_FILE_BYTES:
+                    continue
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                if rx.search(line):
+                    try:
+                        rel = f.relative_to(self.cwd).as_posix()
+                    except ValueError:
+                        rel = f.as_posix()
+                    matches.append(f"{rel}:{lineno}: {line.strip()[:200]}")
+                    if len(matches) >= max_results:
+                        break
+            if len(matches) >= max_results:
+                break
+
+        if not matches:
+            return False, f"No matches for '{pattern}' under {root.as_posix()}"
+        suffix = f"\n… ({max_results} result cap reached, narrow the pattern or glob)" \
+            if len(matches) >= max_results else ""
+        return True, "\n".join(matches) + suffix
+
+    def _edit_file(self, args: Dict[str, Any]) -> Tuple[bool, str]:
+        """Targeted find/replace edit — the alternative to rewriting a whole
+        file just to change one part of it (write_file overwrites everything)."""
+        p = self._resolve(args["path"])
+        if not p.exists():
+            return False, f"File not found: {p.as_posix()}"
+        old = args.get("old_string", "")
+        new = args.get("new_string", "")
+        if not old:
+            return False, "Missing argument 'old_string' for tool edit_file"
+        text = p.read_text(encoding="utf-8", errors="replace")
+        count = text.count(old)
+        if count == 0:
+            return False, "old_string not found in file — read the file first and copy the exact text"
+        if count > 1 and not args.get("replace_all"):
+            return False, (f"old_string is not unique ({count} occurrences) — include more "
+                           "surrounding context, or pass replace_all=true")
+        new_text = text.replace(old, new) if args.get("replace_all") else text.replace(old, new, 1)
+        p.write_text(new_text, encoding="utf-8")
+        n = count if args.get("replace_all") else 1
+        return True, f"Edited {p.as_posix()} ({n} replacement{'s' if n != 1 else ''})"
+
 
 # ----------------------------------------------------------------- reporter
 class Reporter:
@@ -127,60 +284,6 @@ class Reporter:
 
 # ------------------------------------------------------------------- parser
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
-
-# Phrases that signal the user actually wants a filesystem / shell ACTION.
-# Anything that doesn't match these is treated as conversation (greet, explain,
-# plan, show code) and never touches the filesystem.
-_ACTION_PATTERNS = (
-    "create a folder", "create folder", "create a file", "create file",
-    "create a directory", "create a project", "create an app", "create a script",
-    "make a folder", "make folder", "make a file", "make a directory",
-    "make a project", "make an app", "build a project", "build an app",
-    "build a website", "build an api", "build me", "new folder", "new file",
-    "scaffold", "set up a project", "setup a project", "generate a file",
-    "generate the", "save it to", "save to", "save as", "save this",
-    "write a file", "write to a file", "write to file", "write the code",
-    "write code to a", "append to", "delete", "remove the", "remove file", "rm ",
-    "run the", "run a command", "run this", "run it", "run my", "execute ",
-    "mkdir", "touch ", "list the files", "list files", "show me the files",
-    "show files", "scan the", "scan this", "scan my", "scan it", "read the file",
-    "read file", "open the file", "fix the", "fix my", "fix this", "refactor",
-    "edit the", "edit my", "modify the", "update the", "rename", "move the file",
-    "install ", "npm ", "pip install", "implement the", "implement a",
-    "add a file", "add a function to", "complete the code", "complete this",
-)
-
-
-_DOC_EXTS = (".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".tsv", ".pptx",
-             ".ppt", ".txt", ".md", ".json", ".html", ".htm", ".py", ".js",
-             ".java", ".png", ".jpg", ".jpeg")
-
-
-def wants_action(text: str) -> bool:
-    """True if the message asks SABI to act on files / run commands.
-
-    Greetings and bare 'write a function …' (code as text) return False, so they
-    are answered conversationally. Anything naming a real file, or asking to
-    read / open / summarize a document, routes to the acting agent.
-    """
-    t = " " + text.lower().strip() + " "
-    if any(p in t for p in _ACTION_PATTERNS):
-        return True
-    # any mention of a real document/file extension -> act on it
-    if any((ext + " ") in t or t.rstrip().endswith(ext) for ext in _DOC_EXTS):
-        return True
-    # summarize / explain / read a file or document
-    if any(v in t for v in ("summarize", "summarise", "read ", "open ")) and \
-       any(g in t for g in ("file", "document", "doc ", "pdf", "spreadsheet", "sheet")):
-        return True
-    # navigation / inspection: "go into X folder", "open the X folder", etc.
-    nav = ("go into", "go to the", "open the", "open ", "navigate", "cd into",
-           "look inside", "look in the", "explore", "inspect", "what's in",
-           "what is in", "what is inside", "tell me what", "go inside")
-    targets = ("folder", "directory", " dir ", "repo", "project", "file")
-    if any(n in t for n in nav) and any(g in t for g in targets):
-        return True
-    return False
 
 
 def parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
@@ -249,33 +352,6 @@ class AgentResult:
 
 
 # --------------------------------------------------------------------- loop
-class AgentLoop:
-    def __init__(
-        self,
-        model: LLMModel,
-        permissions: PermissionManager,
-        system_prompt: str = "",
-        cwd: Optional[Path] = None,
-        reporter: Optional[Reporter] = None,
-        max_steps: int = MAX_STEPS,
-    ):
-        self.model = model
-        self.permissions = permissions
-        self.system_prompt = system_prompt or DEFAULT_AGENT_PROMPT
-        self.executor = ToolExecutor(cwd)
-        self.reporter = reporter or Reporter()
-        self.max_steps = max_steps
-
-    def _perm_key(self, tool: str, args: Dict[str, Any]) -> str:
-        if tool == "run_shell":
-            return "shell"
-        p = args.get("path")
-        if p:
-            r = self.executor._resolve(p)
-            return str(r if tool == "create_dir" else r.parent)
-        return "action"
-
-# --------------------------------------------------------------------- loop
 _LOCATION_WORDS = ("desktop", "documents", "downloads", "home directory", "home folder")
 
 
@@ -289,6 +365,7 @@ class AgentLoop:
         reporter: Optional[Reporter] = None,
         max_steps: int = MAX_STEPS,
         keep_history: bool = True,
+        retriever: Optional[Any] = None,
     ):
         self.model = model
         self.permissions = permissions
@@ -298,6 +375,11 @@ class AgentLoop:
         self.max_steps = max_steps
         self.keep_history = keep_history
         self.history: List[dict] = []   # compact memory across turns
+        # Long-term recall beyond the rolling `history` window: each finished
+        # turn is indexed here so a later, unrelated turn can still retrieve it
+        # (see runtime.py — the same retriever backs a project-wide codebase
+        # index too, so this is the one place "memory" actually lives).
+        self.retriever = retriever
 
     # -- known locations so the model/agent place things correctly --
     def _locations(self) -> Dict[str, Path]:
@@ -354,13 +436,22 @@ class AgentLoop:
     def _remember(self, request: str, result: "AgentResult") -> None:
         if not self.keep_history:
             return
-        self.history.append({"role": "user", "content": request[:500]})
         note = ""
         if result.actions:
             note = "\n[done: " + "; ".join(result.actions[:6]) + "]"
-        self.history.append({"role": "assistant", "content": (result.answer or "")[:600] + note})
+        answer = (result.answer or "")[:600] + note
+        self.history.append({"role": "user", "content": request[:500]})
+        self.history.append({"role": "assistant", "content": answer})
         # keep the last 8 messages (4 turns) to stay within the context window
         self.history = self.history[-8:]
+        # The rolling window above is what the model sees NEXT turn; the
+        # retriever is what lets it recall THIS turn many turns later, once
+        # it has scrolled out of that window.
+        if self.retriever is not None:
+            try:
+                self.retriever.add_text(f"USER: {request}\nSABI: {answer}", source="conversation")
+            except Exception:
+                pass
 
     def run(self, request: str, context: str = "") -> AgentResult:
         messages = [{"role": "system", "content": self._system(context)}]
@@ -372,6 +463,20 @@ class AgentLoop:
         # done. Track exact-repeat calls and force termination rather than
         # burning the whole step budget on redundant verification.
         seen_calls: set = set()
+        # The last successful read-only tool's raw output. Small models
+        # sometimes fetch the data (list_dir/read_file/search_files all
+        # succeed) and then fail to transcribe it into {"final": ...} —
+        # instead repeating the same call or running out of steps. When that
+        # happens we still have the real data right here, so the fallback
+        # answers below show THAT instead of a content-free "I did a thing".
+        last_info_output: Optional[str] = None
+        _INFO_TOOLS = {"list_dir", "read_file", "search_files"}
+
+        def _fallback_answer() -> str:
+            if last_info_output is not None:
+                return last_info_output
+            return ("Here is what I completed:\n" + "\n".join(result.actions)
+                    if result.actions else "Nothing further to do.")
 
         for step in range(self.max_steps):
             self.reporter.thinking()
@@ -412,8 +517,7 @@ class AgentLoop:
                 # looping instead of finishing. Stop here rather than spend
                 # the rest of the step budget re-verifying the same thing.
                 result.ok = True
-                result.answer = ("Here is what I completed:\n" + "\n".join(result.actions)
-                                  if result.actions else "Nothing further to do.")
+                result.answer = _fallback_answer()
                 self.reporter.final(result.answer)
                 self._remember(request, result)
                 return result
@@ -441,12 +545,13 @@ class AgentLoop:
             ok, output = self.executor.execute(tool, args)
             self.reporter.ran(ok, output)
             result.actions.append(("OK: " if ok else "FAIL: ") + desc)
+            last_info_output = output if (ok and tool in _INFO_TOOLS) else None
             messages.append({"role": "user", "content":
                              f"TOOL RESULT ({'success' if ok else 'error'}):\n{output}\n"
                              "Call another tool if needed, or give your final answer in plain text."})
 
         result.ok = True
-        result.answer = "Here is what I completed:\n" + "\n".join(result.actions)
+        result.answer = _fallback_answer()
         self._remember(request, result)
         return result
 
@@ -463,10 +568,26 @@ two valid shapes:
 Never reply with bare prose or bare code — always wrap it in {"final": "..."}.
 
 Available tools:
-- create_dir(path)            create a folder
+- create_dir(path)            create a NEW folder. Only for an explicit "create/make/new folder" \
+request. NEVER use this for "go into / move into / open / look inside" an existing folder — that \
+means list_dir, not create_dir. If you're not sure a folder exists, try list_dir first; \
+create_dir on a name that turns out to already exist (wrong case, near-typo) will refuse and \
+tell you the real name instead of making a confusing duplicate.
 - write_file(path, content)   create or overwrite a file (write complete, runnable code)
-- read_file(path)             read ANY file (PDF, Word, Excel, PowerPoint, CSV, HTML, JSON, images, code, text) and get its text
-- list_dir(path)              list a folder
+- read_file(path, offset=None, limit=200)  read ANY file (PDF, Word, Excel, PowerPoint, CSV, \
+HTML, JSON, images, code, text) and get its text. Files longer than a few hundred lines are \
+returned truncated — pass offset (1-based line number, e.g. from a search_files hit) and limit \
+to read the next window of a large file instead of guessing from a truncated dump.
+- list_dir(path)              list a folder (one level)
+- search_files(pattern, path=".", glob=None)  recursively search file CONTENTS for a regex/text \
+pattern across a whole codebase (skips .git, node_modules, venvs, build dirs). Returns \
+"relpath:line: text" per match. Use this FIRST to find where something lives before reading \
+or editing it — never guess a file path.
+- edit_file(path, old_string, new_string, replace_all=false)  change PART of an existing file: \
+old_string must match the file's text EXACTLY (copy it from a prior read_file/search_files \
+result, including whitespace) and must be unique in the file, or the call fails and tells you \
+why. Use this instead of write_file whenever you are changing an existing file — write_file \
+erases everything else in it.
 - run_shell(command)          run a shell command
 
 After a tool runs you receive its result as the next message, then reply with \
@@ -486,20 +607,49 @@ Examples:
   {"tool": "write_file", "args": {"path": "{home}/Desktop/app/main.py", "content": "print('hello')"}}
 - "what's in my Documents folder?"
   {"tool": "list_dir", "args": {"path": "{home}/Documents"}}
+  -> after the TOOL RESULT comes back, DO NOT reply {"tool": "list_dir", ...} again — reply
+  {"final": "Your Documents folder contains: report.pdf, notes.txt, ..."} listing what the
+  TOOL RESULT actually said, by name. Repeating the same tool call is a mistake, not a way
+  to double-check.
 - "hi" / "what does this function do?" (no file action needed)
   {"final": "Hello! ..."}
+- "move into the reports folder and list what's inside" (navigating an EXISTING folder)
+  {"tool": "list_dir", "args": {"path": "{cwd}/reports"}}   <- list_dir, never create_dir, for
+  "go into / move into / open" phrasing. Only create_dir when the user explicitly says
+  create/make/new.
+- "fix the bug where login fails" (existing codebase, no file named)
+  {"tool": "search_files", "args": {"path": "{cwd}", "pattern": "login"}}
+- "the calculate_total function is wrong, it should include tax" (existing file, one change)
+  {"tool": "edit_file", "args": {"path": "{cwd}/billing.py",
+   "old_string": "    return subtotal", "new_string": "    return subtotal * (1 + TAX_RATE)"}}
 
 Rules:
 - For greetings, questions, or explanations, use {"final": "..."} — do NOT call a tool.
 - NEVER say you cannot access files or folders. You CAN, via the tools above.
-- When asked to create / edit / read / open / go into / build something, DO it with tools \
-instead of describing it in a {"final": ...}.
+- When asked to create / edit / read / open / go into / build / fix / debug something, DO it \
+with tools instead of describing it in a {"final": ...}.
+- Working in an EXISTING codebase: if you don't already know the exact file, use search_files \
+to find it — do not guess a path or ask the user where the code is.
+- Changing EXISTING code: prefer edit_file over write_file. Only use write_file on a file you \
+already fully read this conversation (or one you are creating from scratch) — otherwise you \
+will silently delete code you never saw.
 - Write complete, correct, runnable code. Inside {"final": "..."}, wrap code in fenced \
 blocks with the language, e.g. ```python ... ``` so it is highlighted.
 - Exactly one JSON object per reply. Keep going until the task is done.
 - Do NOT re-read or re-run the same file more than once to "double check" it. One \
 verification pass (at most) after the last write is enough — as soon as the task is \
 verifiably complete, stop with {"final": "..."} instead of repeating tool calls.
+- After list_dir / read_file / search_files, your VERY NEXT reply must be {"final": ...} \
+containing the actual results (file names, matched lines, file contents) — never repeat the \
+same lookup again, and never reply with a {"final": ...} that only says you performed the \
+lookup without saying what it found. "I listed the folder" is not an answer; the folder's \
+contents are the answer.
+- NEVER state whether a file/folder exists, is empty, or what it contains unless a TOOL RESULT \
+for that EXACT path appears earlier in THIS conversation. A different path's result (even the \
+one from the message right before) tells you nothing about this one — a folder being empty a \
+moment ago does not make the next folder the user asks about empty too. If you don't have a \
+tool result for the path being asked about, call list_dir/read_file on it before answering. \
+Guessing here is worse than being slow.
 
 Current working directory: {cwd}
 Home directory: {home}

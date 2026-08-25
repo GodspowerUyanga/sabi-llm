@@ -14,6 +14,11 @@ sabi_workspace/.sabi/
 sabi_workspace/**/
 !sabi_workspace/.gitkeep
 
+# Per-project SABI memory (created inside whatever directory `sabi` is run
+# from — analogous to .git — so it lives at the root of every project SABI
+# is pointed at, not just this repo)
+.sabi/
+
 # Benchmarks output
 benchmarks/report.json
 benchmarks/report.md

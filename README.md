@@ -74,19 +74,24 @@ locally; your data never leaves your machine.
 
 ## Quickstart
 
+No cloning, no source checkout — install the package like any CLI tool, then
+run it from inside whatever project you want SABI to work on:
+
 ```bash
-git clone https://github.com/godspoweruyanga/sabi-llm.git
-cd sabi-llm
-python3 -m venv .venv && source .venv/bin/activate
-pip install --upgrade pip
-pip install -e ".[tui]"      # SABI + the full-screen interface
-sabi download                # pulls the model (~2 GB) into ./models/
-sabi run                     # start the offline AI coworker
+pip install "sabi-llm[full]"   # SABI + everything it needs to actually run
+sabi download                  # pulls the model (~2 GB), once, into ~/.sabi/models/
+cd ~/your-project              # cd into the codebase you want help with
+sabi                           # start the offline AI coworker, scoped to this project
 ```
 
-That's everything. The model downloads itself from Hugging Face into a new
-`models/` folder, so there's nothing to fetch by hand. (Skip `sabi download` if
-you like — the first `sabi run` offers to download it for you.)
+That's everything. The model downloads once into `~/.sabi/models/` — shared
+across every project on the machine, not re-downloaded per project — and each
+project gets its own `.sabi/` folder (created next to your code, like `.git/`)
+for SABI's memory of that specific codebase. (Skip `sabi download` if you
+like — the first `sabi run` offers to download it for you.)
+
+Building from source instead (contributing, or the ADTC audit harness) still
+works the usual way — see [Installation, in detail](#installation-in-detail).
 
 **ADTC 2026 audit note.** For the challenge's audit harness, use
 `./download_model.sh` instead of `sabi download` — same source, same
@@ -137,14 +142,25 @@ Install any combination, e.g. `pip install -e ".[tui,serve]"`.
 | Extra | Command | What it adds |
 |-------|---------|--------------|
 | *(none)* | `pip install -e .` | Core SABI + the simple terminal chat. Lightweight (rich, psutil, numpy, PyYAML). |
+| `full` | `pip install -e ".[full]"` | Everything below in one shot — the one-line quickstart for an end-user laptop install. |
 | `tui` | `pip install -e ".[tui]"` | The full-screen opencode-style interface (adds **textual**). **Recommended.** |
 | `docs` | `pip install -e ".[docs]"` | Read PDFs, Word, Excel, PowerPoint, HTML & images (adds pypdf, python-docx, openpyxl, python-pptx, beautifulsoup4). |
 | `serve` | `pip install -e ".[serve]"` | The browser web app with chat history (adds **flask**). |
 | `inference` | `pip install -e ".[inference]"` | The GGUF model backend (**llama-cpp-python**) — needed to actually run the model. Usually pulled in by `requirements.txt`. |
 | `hub` | `pip install -e ".[hub]"` | `huggingface_hub`, an optional fallback for model download (private repos / auth). Not required — direct download works without it. |
+| `translate` | `pip install -e ".[translate]"` | sabi-yoruba-tts (African Alpha Bonus) — English<->Yoruba translation layer (adds **ctranslate2**, **transformers**). |
 | `dev` | `pip install -e ".[dev]"` | Everything above plus test/lint tools (pytest, ruff). |
 
-To install **everything**: `pip install -e ".[tui,serve,inference,hub,dev]"`.
+To install **everything**: `pip install -e ".[full,translate,dev]"`.
+
+**Where things live.** `sabi download` puts the model at `~/.sabi/models/` and
+uses that same home-anchored `~/.sabi/` for its own scratch workspace — so it
+works from a real install with no writable repo directory in sight. The one
+exception: if a `models/sabi-v1.Q4_K_M.gguf` already exists relative to where
+`sabi` was installed from (a source checkout that ran `download_model.sh`),
+SABI uses that file instead, so the ADTC audit flow above is unaffected.
+Per-project memory (what SABI has learned about *this* codebase) always lives
+in `.sabi/` inside the project you run `sabi` from, next to your code.
 
 ---
 

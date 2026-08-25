@@ -85,7 +85,7 @@ class ConsoleReporter(Reporter):
 
 
 def chat_loop(runtime: Runtime, auto_approve: bool = False, cwd: str | None = None) -> None:
-    runtime.start()
+    runtime.start(cwd=cwd)
     model_label = runtime.config.abs_model_path().stem or "offline model"
     C.intro_screen(model_label=model_label,
                    ready=bool(runtime.model and runtime.model.is_available()))
@@ -103,6 +103,13 @@ def chat_loop(runtime: Runtime, auto_approve: bool = False, cwd: str | None = No
     )
     reporter = ConsoleReporter()
     agent = runtime.make_agent(permissions=permissions, reporter=reporter, cwd=cwd)
+    try:
+        n = runtime.index_codebase(cwd=cwd)
+        if n:
+            C.info(f"[dim]indexed {n} project file(s) for context[/dim]" if C.has_rich()
+                   else f"indexed {n} project file(s) for context")
+    except Exception:
+        pass
 
     while True:
         try:

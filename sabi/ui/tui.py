@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import os
 import threading
-import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -32,7 +31,7 @@ except Exception:  # pragma: no cover
 
 from ..runtime import Runtime
 from ..permissions import PermissionManager, Decision
-from ..agent import Reporter, wants_action
+from ..agent import Reporter
 
 
 def textual_available() -> bool:
@@ -174,6 +173,7 @@ if _HAS_TEXTUAL:
             self.cwd = Path(cwd or os.getcwd())
             self.model_label = runtime.config.abs_model_path().stem or "offline model"
             self.total_tokens = 0
+            self.last_turn_tokens = 0
             self.ctx = runtime.config.context_length
             self.activity: List[Tuple[str, str]] = []
             self._busy = False
@@ -221,6 +221,16 @@ if _HAS_TEXTUAL:
             self._refresh_side()
             self._set_status("ready")
             self.set_interval(0.1, self._tick)
+            self._index_codebase()
+
+        @work(thread=True, exclusive=False)
+        def _index_codebase(self) -> None:
+            # Warm the project-wide memory in the background so it's ready by
+            # the time the first real question comes in, without blocking input.
+            try:
+                self.rt.index_codebase(cwd=str(self.cwd))
+            except Exception:
+                pass
 
         # ---------------------------------------------------------- permission I/O
         def _prompt_permission(self, key: str, desc: str) -> Decision:
@@ -260,9 +270,16 @@ if _HAS_TEXTUAL:
                 Text.from_markup(f"[#36d6c8]Agent[/] · {self.model_label} · {msg}"))
 
         def _refresh_side(self) -> None:
-            pct = (self.total_tokens / self.ctx * 100) if self.ctx else 0
+            # % of window has to compare against a SINGLE request's size, not
+            # the running session total — total_tokens only grows turn over
+            # turn, so comparing it to the fixed context window would climb
+            # past 100% within a few messages and mean nothing (a fresh 4096
+            # -token request the next turn is not "over budget" just because
+            # earlier turns happened).
+            pct = (self.last_turn_tokens / self.ctx * 100) if self.ctx else 0
             self.query_one("#ctx", Static).update(Text.from_markup(
-                f"{self.total_tokens:,} tokens\n{pct:.0f}% of {self.ctx:,}\n$0.00 (offline)"))
+                f"{self.total_tokens:,} tokens total\n"
+                f"last turn: {pct:.0f}% of {self.ctx:,}\n$0.00 (offline)"))
             loc = str(self.cwd); home = str(Path.home())
             if loc.startswith(home):
                 loc = "~" + loc[len(home):]
@@ -319,9 +336,6 @@ if _HAS_TEXTUAL:
             self.query_one("#chat", VerticalScroll).mount(
                 Static(Text.from_markup(f"[#7d8fa8]{meta}[/]"), classes="m")); self._scroll()
 
-        def _update_stream(self, widget: Static, text: str, done: bool) -> None:
-            widget.update(Markdown(text, code_theme="monokai") if done else Text(text)); self._scroll()
-
         # ---------------------------------------------------------- submit
         def _submit(self, text: str) -> None:
             text = text.strip()
@@ -344,44 +358,18 @@ if _HAS_TEXTUAL:
         # ---------------------------------------------------------- worker
         @work(thread=True, exclusive=True)
         def process(self, message: str) -> None:
-            if wants_action(message):
-                self._run_action(message)
-            else:
-                self._run_chat(message)
+            # Every message goes through the agent loop — the model itself
+            # decides tool-call vs plain answer each turn (see agent.py's
+            # {"final": ...} shape), so a greeting still answers instantly in
+            # prose while "fix the login bug" acts, regardless of exact
+            # phrasing. A keyword gate used to sit here and pick between a
+            # chat-only fast path and this loop; it misclassified natural
+            # phrasing often enough (only reliable with exact tool-name-ish
+            # wording) that it was removed rather than patched further.
+            self._run_action(message)
             self._busy = False
             self.call_from_thread(self._refresh_side)
             self.call_from_thread(self._set_status, "ready")
-
-        def _run_chat(self, message: str) -> None:
-            bubble = self.call_from_thread(self._mount_sabi, "● thinking…")
-            system = self.rt.prompts.get("system", "") or None
-            messages = []
-            if system:
-                messages.append({"role": "system", "content": system})
-            messages.append({"role": "user", "content": message})
-            t0 = time.perf_counter(); buf = ""
-            try:
-                streamed = False
-                for delta in self.rt.model.chat_stream(messages):
-                    streamed = True; buf += delta
-                    self.call_from_thread(self._update_stream, bubble, buf, False)
-                if not streamed:
-                    buf = self.rt.model.generate(message, system=system).text
-            except Exception as exc:  # noqa: BLE001
-                self.call_from_thread(self._update_stream, bubble, f"⚠ {exc}", False); return
-            elapsed = time.perf_counter() - t0
-            self.call_from_thread(self._update_stream, bubble, buf, True)
-            try:
-                toks = self.rt.model.count_tokens(buf)
-            except Exception:
-                toks = max(1, len(buf) // 4)
-            self.total_tokens += toks
-            self.call_from_thread(self._mount_meta, f"CHAT · {toks} tokens · {elapsed:.1f}s")
-            try:
-                self.rt.memory.add_turn("user", message, "CHAT")
-                self.rt.memory.add_turn("assistant", buf, "CHAT")
-            except Exception:
-                pass
 
         def _run_action(self, message: str) -> None:
             self.call_from_thread(self.activity_reset)
@@ -393,15 +381,21 @@ if _HAS_TEXTUAL:
             if res.error:
                 self.call_from_thread(self._mount_sabi, f"⚠ {res.error}"); return
             self.total_tokens += res.tokens
+            self.last_turn_tokens = res.tokens
             self.call_from_thread(self._mount_actions, res.actions)
             self.call_from_thread(self._mount_sabi, res.answer or "Done.")
             self.call_from_thread(self._mount_meta,
                                   f"{res.tokens:,} tokens · {res.elapsed_s:.1f}s · {res.steps_taken} step(s)")
+            try:
+                self.rt.memory.add_turn("user", message, "AGENT")
+                self.rt.memory.add_turn("assistant", res.answer, "AGENT")
+            except Exception:
+                pass
 
 
 def run_tui(runtime: Runtime, cwd: Optional[str] = None) -> None:
     if not _HAS_TEXTUAL:
         raise RuntimeError("The TUI needs the 'textual' package. Install it with:\n"
                            '    pip install "sabi-llm[tui]"')
-    runtime.start()
+    runtime.start(cwd=cwd)
     SabiTUI(runtime, cwd=cwd).run()

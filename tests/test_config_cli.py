@@ -16,6 +16,29 @@ def test_env_override(monkeypatch):
     assert cfg.temperature == 0.1
 
 
+def test_model_path_prefers_existing_repo_relative_file(tmp_path, monkeypatch):
+    # The ADTC 2026 submission contract (metadata.json, download_model.sh)
+    # hardcodes "models/<file>" relative to the repo — if that file is
+    # already there (a real checkout that ran download_model.sh), SABI must
+    # keep using it exactly, not silently look elsewhere.
+    (tmp_path / "models").mkdir()
+    legacy = tmp_path / "models" / "sabi-v1.Q4_K_M.gguf"
+    legacy.write_bytes(b"fake")
+    cfg = load_config(root=tmp_path)
+    assert cfg.abs_model_path() == legacy
+
+
+def test_model_path_falls_back_to_home_when_no_repo_copy(tmp_path, monkeypatch):
+    # A real `pip install sabi-llm` with no repo checkout at all: nothing at
+    # the repo-relative path, so it must resolve under the user's home dir
+    # instead of a (likely unwritable, and wrong-scoped) install directory.
+    import sabi.config as config_mod
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(config_mod, "USER_DATA_ROOT", fake_home / ".sabi")
+    cfg = load_config(root=tmp_path / "empty_install_dir")
+    assert cfg.abs_model_path() == fake_home / ".sabi" / "models" / "sabi-v1.Q4_K_M.gguf"
+
+
 def test_cli_version(capsys):
     rc = cli.main(["version"])
     assert rc == 0

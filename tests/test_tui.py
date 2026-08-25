@@ -67,7 +67,7 @@ class FakeAgentModel:
 async def test_tui_mounts_and_responds(tmp_path):
     from sabi.ui.tui import SabiTUI
 
-    rt = Runtime(load_config()).start()
+    rt = Runtime(load_config()).start(cwd=str(tmp_path))
     rt.model = FakeModel()
     # rebuild agent so it uses the fake model
     from sabi.permissions import PermissionManager
@@ -96,24 +96,17 @@ def test_tui_importable_without_textual(monkeypatch):
     assert tui.textual_available() in (True, False)
 
 
-def test_greetings_do_not_trigger_actions():
-    from sabi.agent import wants_action
-    # greetings / questions / code-as-text => NO filesystem action
-    for msg in ["hello", "hi there", "how are you", "what can you do",
-                "explain how RAG works", "write a function to reverse a string",
-                "write a python script to sort a list"]:
-        assert wants_action(msg) is False, msg
-
-
-def test_real_actions_trigger_agent():
-    from sabi.agent import wants_action
-    for msg in ["create a folder called app", "make a file notes.txt",
-                "scan the project for issues", "run the tests",
-                "scaffold a python project", "save it to out.py",
-                "delete the temp folder", "read the file config.yaml",
-                "go into the gworldgroup folder", "open the appstore folder",
-                "what's in my documents folder", "navigate to the src directory"]:
-        assert wants_action(msg) is True, msg
+def test_tui_process_always_uses_agent_loop_regardless_of_phrasing(tmp_path):
+    # There used to be a keyword gate here that only routed obvious phrasings
+    # ("create a folder…") to the agent and sent everything else — including
+    # natural phrasings that didn't match the keyword list — to a tool-less
+    # chat fast path. It misclassified real requests often enough that it was
+    # removed: process() now always runs the agent loop, and the MODEL decides
+    # (via {"tool": ...} vs {"final": ...}) whether a turn needs a tool.
+    from sabi.ui.tui import SabiTUI
+    assert not hasattr(SabiTUI, "_run_chat")
+    import sabi.ui.tui as tui_mod
+    assert not hasattr(tui_mod, "wants_action")
 
 
 def test_location_safety_net(tmp_path, monkeypatch):

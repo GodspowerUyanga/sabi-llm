@@ -63,6 +63,25 @@ def test_executor_creates_dir(tmp_path):
     assert (tmp_path / "project1").is_dir()
 
 
+def test_executor_create_dir_refuses_near_duplicate_of_existing_folder(tmp_path):
+    (tmp_path / "MSC ARTIFICIAL INTELLIGENCE").mkdir()
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("create_dir", {"path": "MSc Artificial Intelligence"})
+    assert not ok
+    assert "MSC ARTIFICIAL INTELLIGENCE" in msg
+    assert not (tmp_path / "MSc Artificial Intelligence").exists()
+    # the real, existing folder must be untouched and still there
+    assert (tmp_path / "MSC ARTIFICIAL INTELLIGENCE").is_dir()
+
+
+def test_executor_list_dir_missing_path_suggests_close_match(tmp_path):
+    (tmp_path / "projects").mkdir()
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("list_dir", {"path": "projcets"})
+    assert not ok
+    assert "projects" in msg
+
+
 def test_executor_writes_file(tmp_path):
     ex = ToolExecutor(cwd=tmp_path)
     ok, _ = ex.execute("write_file", {"path": "notes/todo.txt", "content": "hi"})
@@ -75,6 +94,98 @@ def test_executor_blocks_dangerous_shell(tmp_path):
     ok, msg = ex.execute("run_shell", {"command": "rm -rf /"})
     assert not ok
     assert "safety" in msg.lower()
+
+
+def test_executor_search_finds_match_across_subdirs(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "a.py").write_text("def calculate_total():\n    return 1\n")
+    (tmp_path / "pkg" / "b.py").write_text("x = 2\n")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("search_files", {"pattern": "calculate_total"})
+    assert ok
+    assert "pkg/a.py:1:" in msg
+    assert "b.py" not in msg
+
+
+def test_executor_search_skips_junk_dirs(tmp_path):
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "dep.js").write_text("needle\n")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("search_files", {"pattern": "needle"})
+    assert not ok
+
+
+def test_executor_search_no_match(tmp_path):
+    (tmp_path / "a.py").write_text("hello\n")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("search_files", {"pattern": "nope"})
+    assert not ok
+    assert "No matches" in msg
+
+
+def test_executor_edit_replaces_unique_snippet(tmp_path):
+    f = tmp_path / "billing.py"
+    f.write_text("def total(x):\n    return x\n")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("edit_file", {
+        "path": "billing.py", "old_string": "    return x", "new_string": "    return x * 1.1",
+    })
+    assert ok
+    assert f.read_text() == "def total(x):\n    return x * 1.1\n"
+
+
+def test_executor_edit_rejects_missing_snippet(tmp_path):
+    f = tmp_path / "billing.py"
+    f.write_text("def total(x):\n    return x\n")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("edit_file", {
+        "path": "billing.py", "old_string": "not in file", "new_string": "x",
+    })
+    assert not ok
+    assert "not found" in msg.lower()
+
+
+def test_executor_edit_rejects_ambiguous_snippet(tmp_path):
+    f = tmp_path / "billing.py"
+    f.write_text("x = 1\nx = 1\n")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("edit_file", {
+        "path": "billing.py", "old_string": "x = 1", "new_string": "x = 2",
+    })
+    assert not ok
+    assert "not unique" in msg.lower()
+
+
+def test_executor_read_file_with_offset_and_limit(tmp_path):
+    f = tmp_path / "big.py"
+    f.write_text("\n".join(f"line{i}" for i in range(1, 11)) + "\n")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("read_file", {"path": "big.py", "offset": 3, "limit": 2})
+    assert ok
+    assert "line3" in msg and "line4" in msg
+    assert "line5" not in msg
+    assert "more line(s)" in msg
+
+
+def test_executor_read_file_offset_past_end(tmp_path):
+    f = tmp_path / "small.py"
+    f.write_text("only line\n")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("read_file", {"path": "small.py", "offset": 50})
+    assert not ok
+    assert "past the end" in msg
+
+
+def test_executor_edit_replace_all(tmp_path):
+    f = tmp_path / "billing.py"
+    f.write_text("x = 1\nx = 1\n")
+    ex = ToolExecutor(cwd=tmp_path)
+    ok, msg = ex.execute("edit_file", {
+        "path": "billing.py", "old_string": "x = 1", "new_string": "x = 2",
+        "replace_all": True,
+    })
+    assert ok
+    assert f.read_text() == "x = 2\nx = 2\n"
 
 
 # ------------------------------------------------------------------- loop
@@ -106,6 +217,50 @@ def test_agent_respects_denial(tmp_path):
     assert res.ok
     assert not (tmp_path / "secret").exists()
     assert any("DENIED" in a for a in res.actions)
+
+
+class FakeRetriever:
+    """Records what AgentLoop indexes, without a real embedder/vector store."""
+
+    def __init__(self):
+        self.indexed = []
+
+    def add_text(self, text, source=""):
+        self.indexed.append((source, text))
+
+
+def test_agent_indexes_each_turn_into_retriever(tmp_path):
+    model = FakeModel(["Hi there! How can I help?"])
+    pm = PermissionManager(auto_approve=True)
+    retriever = FakeRetriever()
+    loop = AgentLoop(model, pm, system_prompt="sys", cwd=tmp_path, retriever=retriever)
+    loop.run("hello")
+    assert len(retriever.indexed) == 1
+    source, text = retriever.indexed[0]
+    assert source == "conversation"
+    assert "hello" in text.lower()
+    assert "Hi there" in text
+
+
+def test_agent_shows_real_data_when_model_repeats_list_dir_instead_of_finishing(tmp_path):
+    # Reproduces a real failure: user asks "what files are on my desktop", the
+    # model successfully lists the directory, then — instead of replying with
+    # {"final": "..."} describing what it found — emits the exact same
+    # list_dir call again. The loop-guard used to end the turn with a
+    # content-free "Here is what I completed: OK: list a directory: X", which
+    # never told the user what was actually IN the directory. It must now
+    # surface the real listing instead.
+    (tmp_path / "notes.txt").write_text("hi")
+    (tmp_path / "photos").mkdir()
+    call = '{"tool": "list_dir", "args": {"path": "."}}'
+    model = FakeModel([call, call, call])  # repeats the same call every time
+    pm = PermissionManager(auto_approve=True)
+    loop = AgentLoop(model, pm, system_prompt="sys", cwd=tmp_path)
+    res = loop.run("what files exist in this folder")
+    assert res.ok
+    assert "notes.txt" in res.answer
+    assert "photos" in res.answer
+    assert "Here is what I completed" not in res.answer
 
 
 def test_agent_in_project_action_not_prompted(tmp_path):

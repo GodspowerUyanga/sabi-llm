@@ -47,6 +47,12 @@ docs = ["pypdf>=4.0", "python-docx>=1.1", "openpyxl>=3.1", "python-pptx>=0.6",
         "beautifulsoup4>=4.12"]
 # sabi-yoruba-tts (African Alpha Bonus): English<->Yoruba translation layer.
 translate = ["ctranslate2>=4.0", "transformers>=4.30"]
+# Everything a laptop install needs to actually run SABI end-to-end: the
+# inference backend, model download, the full-screen UI, the web UI, and
+# document reading. `pip install "sabi-llm[full]"` is the one-line quickstart.
+full = ["llama-cpp-python>=0.2.50", "huggingface_hub>=0.20", "flask>=3.0",
+        "textual>=0.60", "pypdf>=4.0", "python-docx>=1.1", "openpyxl>=3.1",
+        "python-pptx>=0.6", "beautifulsoup4>=4.12"]
 # Development / testing.
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1", "flask>=3.0", "textual>=0.60",
        "pytest-asyncio>=0.23", "pypdf>=4.0", "python-docx>=1.1", "openpyxl>=3.1",

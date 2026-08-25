@@ -1,0 +1,75 @@
+=== sabi think: PRD for a farmer market-price advisory tool ===
+llama_context: n_ctx_seq (4096) < n_ctx_train (32768) -- the full capacity of the model will not be utilized
+Goal: Create a concise one-page Product Requirements Document (PRD) for an      
+offline crop-price advisory tool for smallholder farmers.                       
+
+Requirements:                                                                   
+
+ 1 User Interface:                                                              
+    • Dashboard: Display current crop prices, weather conditions, and farming   
+      tips.                                                                     
+    • Settings: Allow users to set preferred crop types and receive             
+      notifications.                                                            
+    • Profile: Store user preferences and historical data.                      
+ 2 Data Integration:                                                            
+    • Crop Prices: Fetch real-time data from reliable sources.                  
+    • Weather Data: Access weather forecasts for crop growth.                   
+    • Farming Tips: Provide recommendations based on historical data and weather
+      conditions.                                                               
+ 3 Offline Functionality:                                                       
+    • Cache Data: Store data locally for offline access.                        
+    • Offline Mode: Enable users to use the tool without internet connection.   
+ 4 User Experience:                                                             
+    • User-Friendly Interface: Ensure the tool is easy to navigate and          
+      understand.                                                               
+    • Real-Time Updates: Provide instant feedback on changes.                   
+    • Responsive Design: Ensure compatibility across devices.                   
+ 5 Security:                                                                    
+    • Data Encryption: Protect user data in transit and at rest.                
+    • Privacy Policy: Clearly outline data collection and usage practices.      
+ 6 Scalability:                                                                 
+    • Scalable Data Storage: Ensure the tool can handle a growing user base.    
+    • Scalable Backend: Design the backend to support future growth.            
+ 7 Testing:                                                                     
+    • Unit Testing: Test individual components for accuracy.                    
+    • Integration Testing: Ensure all components work together seamlessly.      
+    • User Testing: Gather feedback from real users to improve usability.       
+
+Plan:                                                                           
+
+ 1 Research and Planning (Day 1-3):                                             
+    • Conduct a thorough analysis of existing crop-price advisory tools.        
+    • Define the scope and objectives of the tool.                              
+    • Create a high-level design document outlining the user interface and data 
+      flow.                                                                     
+ 2 Design (Day 4-7):                                                            
+    • Develop wireframes and mockups for the user interface.                    
+    • Create a detailed design document including user flows and technical      
+      specifications.                                                           
+ 3 Development (Day 8-15):                                                      
+    • Set up the development environment on the offline device.                 
+    • Implement the user interface and core functionality.                      
+    • Integrate data sources and offline features.                              
+    • Implement security measures and data encryption.                          
+ 4 Testing (Day 16-20):                                                         
+    • Conduct unit and integration testing.                                     
+    • Gather feedback from user testing sessions.                               
+    • Address any issues based on testing results.                              
+ 5 Deployment (Day 21-25):                                                      
+    • Package the tool for offline use.                                         
+    • Prepare the tool for distribution to smallholder farmers.                 
+    • Conduct a final review and testing before deployment.                     
+
+Risks & Trade-offs:                                                             
+
+ • Data Accuracy: Offline data may not be as accurate as real-time data.        
+ • Battery Life: Offline mode may require frequent recharging.                  
+ • Scalability: The tool may struggle with a large user base.                   
+ • Security: Ensuring data encryption and privacy may require additional        
+   resources.                                                                   
+
+Next Steps:                                                                     
+
+ • Finalize the PRD based on the completed plan.                                
+ • Prepare a presentation to stakeholders for review.                           
+ • Begin testing and deployment of the tool.                                    

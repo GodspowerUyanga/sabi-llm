@@ -26,9 +26,20 @@ except Exception:  # pragma: no cover
     _HAS_YAML = False
 
 
-# Project root = the directory that contains the `sabi` package.
+# Project root = the directory that contains the `sabi` package. Used only to
+# locate read-only assets shipped WITH the package (prompts/, config/) — this
+# is site-packages/ for a real `pip install sabi-llm`, which is where those
+# ship (verified against a real wheel build/install, not just the source tree).
 PACKAGE_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_ROOT.parent
+
+# User data root for anything SABI writes on its own (downloaded model,
+# internal scratch workspace) — deliberately NOT under PROJECT_ROOT. A real
+# install's site-packages is often read-only for a normal user (system-wide
+# installs) and is the wrong place for a multi-GB model file regardless: it's
+# shared user state, not part of the package, so it belongs where every other
+# CLI tool puts it — the user's home directory — and survives a reinstall.
+USER_DATA_ROOT = Path.home() / ".sabi"
 
 
 DEFAULTS: Dict[str, Any] = {
@@ -110,12 +121,23 @@ class Config:
 
     # ----- Derived absolute paths -----
     def abs_model_path(self) -> Path:
-        return self._resolve(self.model_path)
+        # The ADTC 2026 submission contract (metadata.json's _runtime.model_path,
+        # download_model.sh) hardcodes "models/<file>" relative to the repo —
+        # the audit harness checks that exact path. If it's already there
+        # (repo checkout + download_model.sh), use it as-is so the audited
+        # flow never changes. Otherwise this is a real end-user install with
+        # no repo at all, so fall back to the home-anchored user data dir.
+        legacy = self._resolve(self.model_path)
+        if legacy.exists():
+            return legacy
+        return self._resolve_data(self.model_path)
 
     def abs_workspace(self) -> Path:
-        return self._resolve(self.workspace_dir)
+        # User data (scratch/sandbox): same reasoning as the model.
+        return self._resolve_data(self.workspace_dir)
 
     def abs_prompts(self) -> Path:
+        # Read-only asset shipped WITH the package: install-anchored.
         return self._resolve(self.prompts_dir)
 
     def abs_memory(self) -> Path:
@@ -130,6 +152,10 @@ class Config:
     def _resolve(self, p: str) -> Path:
         path = Path(p)
         return path if path.is_absolute() else (self.root / path)
+
+    def _resolve_data(self, p: str) -> Path:
+        path = Path(p)
+        return path if path.is_absolute() else (USER_DATA_ROOT / path)
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)

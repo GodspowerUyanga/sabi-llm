@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import webbrowser
 from pathlib import Path
-from threading import Timer
+from threading import Thread, Timer
 from typing import Dict, List, Optional
 
 from .config import Config, load_config
@@ -223,6 +223,10 @@ def serve(config: Optional[Config] = None, host: str = "127.0.0.1",
     runtime = Runtime(config).start()
     store = ConversationStore(config.abs_workspace() / ".sabi" / "conversations.json")
     app = create_app(runtime, store)
+
+    # Warm the project-wide memory in the background so agent-mode requests
+    # can recall the codebase without blocking server startup on the walk.
+    Thread(target=lambda: runtime.index_codebase(cwd=str(Path.cwd())), daemon=True).start()
 
     url = f"http://{host}:{port}"
     print(f"\n  SABI web UI running at  {url}")

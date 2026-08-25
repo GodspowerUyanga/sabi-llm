@@ -10,6 +10,7 @@ fast and deterministic:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +25,15 @@ from .agent import AgentLoop, Reporter
 from .permissions import PermissionManager
 from . import project_scanner
 from . import translate
+from .filereader import TEXT_EXTS
+
+# Directories skipped when indexing a codebase — build artifacts, VCS
+# internals and dependency trees are noise and can be enormous.
+_INDEX_SKIP_DIRS = {
+    ".git", "node_modules", "__pycache__", ".venv", "venv", "env",
+    "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".next", "target", ".egg-info",
+}
 
 
 class Runtime:
@@ -38,6 +48,7 @@ class Runtime:
         self.retriever: Optional[Retriever] = None
         self.tools = None
         self.project = None
+        self.cwd: Optional[Path] = None
         self._started = False
 
     # --------------------------------------------------------------- prompts
@@ -50,19 +61,30 @@ class Runtime:
             self.prompts[key] = fpath.read_text(encoding="utf-8") if fpath.exists() else ""
 
     # ----------------------------------------------------------------- start
-    def start(self) -> "Runtime":
+    def start(self, cwd: Optional[str] = None) -> "Runtime":
         if self._started:
             return self
+
+        # Per-project memory root: a ".sabi" folder INSIDE the project being
+        # worked on (like ".git"), not inside wherever SABI itself is
+        # installed. Getting this wrong means every project you ever point
+        # SABI at shares one global memory/vector-store — later runs in repo B
+        # retrieve "relevant context" chunks indexed from unrelated repo A and
+        # feed them to the model, which quietly derails it. cwd defaults to
+        # the directory the process was launched from, which is normally
+        # already the project directory.
+        self.cwd = Path(cwd or os.getcwd()).resolve()
+        project_meta = self.cwd / ".sabi"
 
         # 1) Load model (lazy; not yet read into RAM)
         self.model = LLMModel(self.config)
         # 2) Load prompts
         self._load_prompts()
         # 3) Initialize memory
-        self.config.abs_workspace().mkdir(parents=True, exist_ok=True)
-        self.memory = MemoryStore(self.config.abs_memory())
+        project_meta.mkdir(parents=True, exist_ok=True)
+        self.memory = MemoryStore(project_meta / "memory.json")
         # 3b) Initialize RAG
-        store = VectorStore(self.config.abs_vector_store())
+        store = VectorStore(project_meta / "vector_store.json")
         self.retriever = Retriever(store, HashingEmbedder())
         # 4) Initialize tools
         self.tools = default_registry(self.config.abs_workspace())
@@ -74,9 +96,54 @@ class Runtime:
         self.code = CodeEngine(self.model, self.prompts.get("system", ""),
                                self.prompts.get("code", ""))
         # 7) Scan current project context
-        self.project = project_scanner.scan(".")
+        self.project = project_scanner.scan(self.cwd)
         self._started = True
         return self
+
+    # --------------------------------------------------------- codebase memory
+    def index_codebase(self, cwd: Optional[str] = None,
+                       max_files: int = 400, max_file_bytes: int = 200_000) -> int:
+        """Warm the retriever with this project's source so the agent can recall
+        'what's in this codebase' from turn one, in any language, instead of only
+        seeing what it happens to search/read mid-conversation.
+
+        Only long-lived sessions (TUI, chat REPL) call this — one-shot CLI
+        commands skip it and rely on search_files/read_file, since walking and
+        embedding a whole tree on every invocation would be wasted work.
+        Already-indexed files (by exact path, persisted in the vector store
+        across runs) are skipped, so re-running this is cheap after the first
+        time and never duplicates records.
+        """
+        if not self._started:
+            self.start(cwd=cwd)
+        root = Path(cwd or self.cwd or os.getcwd()).resolve()
+        already = {rec.get("source") for rec in self.retriever.store.records}
+        added = 0
+        for dirpath, dirnames, filenames in os.walk(root):
+            # Skip hidden directories outright (.git, .venv, .llama.cpp-style
+            # vendored checkouts, .next, .cache, …) — a codebase's own
+            # metadata/vendor trees are never what "index this project" means,
+            # and enumerating them by name is a losing game across languages.
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")
+                           and d not in _INDEX_SKIP_DIRS and not d.endswith(".egg-info")]
+            for name in filenames:
+                if added >= max_files:
+                    return added
+                fp = Path(dirpath) / name
+                if fp.suffix.lower() not in TEXT_EXTS:
+                    continue
+                source = str(fp)
+                if source in already:
+                    continue
+                try:
+                    if fp.stat().st_size > max_file_bytes:
+                        continue
+                    self.retriever.add_file(fp)
+                except Exception:
+                    continue
+                already.add(source)
+                added += 1
+        return added
 
     # ------------------------------------------------------- sabi-yoruba-tts
     def _yoruba_status(self, text: str) -> str:
@@ -142,6 +209,10 @@ class Runtime:
             })
             self.memory.add_turn("assistant", text, routing.intent)
             self.memory.add_task(request[:80], "done", routing.intent)
+            try:
+                self.retriever.add_text(f"USER: {request}\nSABI: {text}", source="conversation")
+            except Exception:
+                pass
         except Exception as exc:  # noqa: BLE001 - surface as a clean message
             result.update({"ok": False, "text": "", "error": str(exc)})
         return result
@@ -156,14 +227,15 @@ class Runtime:
         internal workspace sandbox.
         """
         if not self._started:
-            self.start()
+            self.start(cwd=cwd)
         permissions = permissions or PermissionManager(auto_approve=False)
         return AgentLoop(
             model=self.model,
             permissions=permissions,
             system_prompt=self.prompts.get("agent", ""),
-            cwd=Path(cwd) if cwd else Path.cwd(),
+            cwd=Path(cwd) if cwd else (self.cwd or Path.cwd()),
             reporter=reporter,
+            retriever=self.retriever,
         )
 
     def agent(self, request: str, *, permissions: Optional[PermissionManager] = None,
@@ -171,7 +243,7 @@ class Runtime:
               use_rag: bool = True) -> dict:
         """Run the agentic loop for a request and return a result dict."""
         if not self._started:
-            self.start()
+            self.start(cwd=cwd)
         # Translate the natural-language request/reply only; tool-call JSON,
         # file paths and code (`actions`) are never routed through translation.
         yoruba = self._yoruba_status(request)

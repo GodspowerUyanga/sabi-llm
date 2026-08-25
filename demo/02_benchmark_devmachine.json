@@ -1,0 +1,83 @@
+──────────────────────────────── SABI Benchmark ────────────────────────────────
+{
+  "model_available": true,
+  "avg_tps": 18.93,
+  "avg_accuracy": 0.781,
+  "peak_rss_gb": 3.282,
+  "efficiency_score": 53.1,
+  "thermal_throttle": true,
+  "cases": [
+    {
+      "name": "prd_generation",
+      "intent": "THINK",
+      "tps": 20.89,
+      "accuracy": 0.75,
+      "elapsed_s": 49.03,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "name": "sop_generation",
+      "intent": "THINK",
+      "tps": 18.2,
+      "accuracy": 0.333,
+      "elapsed_s": 45.87,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "name": "architecture_plan",
+      "intent": "THINK",
+      "tps": 19.19,
+      "accuracy": 0.667,
+      "elapsed_s": 36.74,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "name": "python_fizzbuzz",
+      "intent": "CODE",
+      "tps": 20.12,
+      "accuracy": 1.0,
+      "elapsed_s": 9.39,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "name": "debug_indexerror",
+      "intent": "CODE",
+      "tps": 20.6,
+      "accuracy": 1.0,
+      "elapsed_s": 7.82,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "name": "js_debounce",
+      "intent": "CODE",
+      "tps": 20.19,
+      "accuracy": 1.0,
+      "elapsed_s": 21.0,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "name": "scaffold_cli",
+      "intent": "CODE",
+      "tps": 19.69,
+      "accuracy": 1.0,
+      "elapsed_s": 48.35,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "name": "general_explain",
+      "intent": "CHAT",
+      "tps": 12.57,
+      "accuracy": 0.5,
+      "elapsed_s": 3.26,
+      "ok": true,
+      "note": ""
+    }
+  ]
+}

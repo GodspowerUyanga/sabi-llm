@@ -46,7 +46,7 @@ def client(tmp_path, monkeypatch):
 
     cfg = load_config()
     monkeypatch.setattr(cfg, "workspace_dir", str(tmp_path))
-    rt = Runtime(cfg).start()
+    rt = Runtime(cfg).start(cwd=str(tmp_path))
     store = ConversationStore(tmp_path / "conv.json")
     app = create_app(rt, store)
     app.config.update(TESTING=True)
