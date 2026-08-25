@@ -413,6 +413,7 @@ class AgentLoop:
         max_steps: int = MAX_STEPS,
         keep_history: bool = True,
         retriever: Optional[Any] = None,
+        initial_history: Optional[List[dict]] = None,
     ):
         self.model = model
         self.permissions = permissions
@@ -421,7 +422,14 @@ class AgentLoop:
         self.reporter = reporter or Reporter()
         self.max_steps = max_steps
         self.keep_history = keep_history
-        self.history: List[dict] = []   # compact memory across turns
+        # compact memory across turns. A caller that keeps this same
+        # AgentLoop object alive across turns (the TUI, the terminal chat
+        # loop) grows this via _remember() as it goes; a caller that
+        # constructs a fresh AgentLoop per turn (sabi serve — one per HTTP
+        # request) MUST pass the prior turns back in here, or every request
+        # is amnesiac: "list them" right after "list my Desktop folders" has
+        # no idea what "them" refers to, since there is no history to see.
+        self.history: List[dict] = list(initial_history or [])[-8:]
         # Long-term recall beyond the rolling `history` window: each finished
         # turn is indexed here so a later, unrelated turn can still retrieve it
         # (see runtime.py — the same retriever backs a project-wide codebase
@@ -519,6 +527,24 @@ class AgentLoop:
         last_info_output: Optional[str] = None
         _INFO_TOOLS = {"list_dir", "read_file", "search_files"}
 
+        def _enrich_with_details(answer: str, raw_output: str) -> str:
+            """If the model's {"final": ...} doesn't actually name the specific
+            items from the last lookup (e.g. "There are 14 folders" with no
+            names, confirmed live even when list_dir just returned all 14)),
+            append the real result so the user gets the actual answer
+            regardless of how well the model summarized it. A prompt rule
+            asking for this exists too, but has proven unreliable on a small
+            model — this makes it true by construction instead of by hoping."""
+            lines = [l.strip() for l in raw_output.splitlines() if l.strip()]
+            if len(lines) < 2:
+                return answer  # nothing meaningfully omittable from 0-1 lines
+            def _name(l: str) -> str:
+                return l[2:].strip() if l[:2] in ("d ", "f ") else l
+            mentioned = sum(1 for l in lines if _name(l) and _name(l) in answer)
+            if mentioned >= max(1, len(lines) // 2):
+                return answer  # the model already named most of them
+            return answer.rstrip() + "\n\n" + raw_output
+
         def _fallback_answer() -> str:
             if last_info_output is not None:
                 return last_info_output
@@ -548,6 +574,8 @@ class AgentLoop:
             if not call:
                 final = parse_final(gen.text)
                 answer = final if final is not None else gen.text
+                if last_info_output is not None:
+                    answer = _enrich_with_details(answer, last_info_output)
                 result.ok = True
                 result.answer = answer
                 self.reporter.final(answer)

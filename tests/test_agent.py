@@ -323,6 +323,79 @@ def test_agent_shows_real_data_when_model_repeats_list_dir_instead_of_finishing(
     assert "Here is what I completed" not in res.answer
 
 
+def test_agent_enriches_vague_final_answer_with_real_listing(tmp_path):
+    # Reproduces a real, different failure from the one above: the model
+    # DOES produce a well-formed {"final": ...} (so the repeat/dedup fallback
+    # never triggers) but it's a bare count with no names — "There are 14
+    # folders in your Desktop directory." — after a successful list_dir with
+    # 14 real entries. The answer must still surface what was actually found.
+    for i in range(1, 15):
+        (tmp_path / f"Project{i}").mkdir()
+    model = FakeModel([
+        '{"tool": "list_dir", "args": {"path": "."}}',
+        "There are 14 folders in your Desktop directory.",
+    ])
+    pm = PermissionManager(auto_approve=True)
+    loop = AgentLoop(model, pm, system_prompt="sys", cwd=tmp_path)
+    res = loop.run("list how many folders are in there")
+    assert res.ok
+    assert "There are 14 folders" in res.answer  # original answer kept
+    assert "Project1" in res.answer and "Project14" in res.answer  # real names appended
+
+
+def test_agent_does_not_duplicate_when_answer_already_names_items(tmp_path):
+    (tmp_path / "notes.txt").write_text("hi")
+    (tmp_path / "photos").mkdir()
+    model = FakeModel([
+        '{"tool": "list_dir", "args": {"path": "."}}',
+        "This folder contains notes.txt and a photos folder.",
+    ])
+    pm = PermissionManager(auto_approve=True)
+    loop = AgentLoop(model, pm, system_prompt="sys", cwd=tmp_path)
+    res = loop.run("what's in this folder")
+    assert res.ok
+    # already named both real entries -> nothing appended, answer untouched
+    assert res.answer == "This folder contains notes.txt and a photos folder."
+
+
+# ----------------------------------------------------- conversation history
+def test_agent_loop_seeds_and_uses_initial_history(tmp_path):
+    # Regression test for a real incident: sabi serve builds a fresh
+    # AgentLoop per HTTP request, so without seeding prior turns a follow-up
+    # like "list them" has no idea what "them" refers to (and, live-tested,
+    # didn't even re-run list_dir — it just guessed). initial_history is how
+    # a per-request caller restores continuity that the TUI/terminal chat
+    # get for free by keeping one AgentLoop alive for the whole session.
+    captured = {}
+
+    class RecordingModel(FakeModel):
+        def chat(self, messages, **kwargs):
+            captured["messages"] = messages
+            return super().chat(messages, **kwargs)
+
+    model = RecordingModel(["Sure, following up on that."])
+    pm = PermissionManager(auto_approve=True)
+    prior = [
+        {"role": "user", "content": "list my desktop folders"},
+        {"role": "assistant", "content": "There are 2 folders: Work, Personal"},
+    ]
+    loop = AgentLoop(model, pm, system_prompt="sys", cwd=tmp_path, initial_history=prior)
+    assert loop.history == prior
+    loop.run("list them")
+    roles_and_content = [(m["role"], m["content"]) for m in captured["messages"]]
+    assert ("user", "list my desktop folders") in roles_and_content
+    assert ("assistant", "There are 2 folders: Work, Personal") in roles_and_content
+
+
+def test_agent_loop_truncates_initial_history_to_last_8():
+    model = FakeModel(["ok"])
+    pm = PermissionManager(auto_approve=True)
+    long_history = [{"role": "user", "content": f"turn {i}"} for i in range(20)]
+    loop = AgentLoop(model, pm, system_prompt="sys", initial_history=long_history)
+    assert len(loop.history) == 8
+    assert loop.history[0]["content"] == "turn 12"  # last 8 of 20 (indices 12..19)
+
+
 def test_agent_in_project_action_not_prompted(tmp_path):
     # Default TUI manager only prompts for external/shell, so an in-project
     # create runs without consulting the prompter.

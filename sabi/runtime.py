@@ -228,12 +228,18 @@ class Runtime:
 
     def make_agent(self, permissions: Optional[PermissionManager] = None,
                    reporter: Optional[Reporter] = None,
-                   cwd: Optional[str] = None) -> AgentLoop:
+                   cwd: Optional[str] = None,
+                   history: Optional[list] = None) -> AgentLoop:
         """Build a tool-calling agent loop bound to a permission manager.
 
         ``cwd`` defaults to the directory SABI was launched from, so the agent
         acts on the user's real project / files (with approval), not the
         internal workspace sandbox.
+
+        ``history`` seeds prior conversation turns (role/content dicts) —
+        needed by any caller that builds a fresh AgentLoop per request (sabi
+        serve) rather than keeping one alive for the whole session (the TUI,
+        the terminal chat loop already do this correctly on their own).
         """
         if not self._started:
             self.start(cwd=cwd)
@@ -245,11 +251,13 @@ class Runtime:
             cwd=Path(cwd) if cwd else (self.cwd or Path.cwd()),
             reporter=reporter,
             retriever=self.retriever,
+            initial_history=history,
         )
 
     def agent(self, request: str, *, permissions: Optional[PermissionManager] = None,
               reporter: Optional[Reporter] = None, cwd: Optional[str] = None,
-              use_rag: bool = True, force_yoruba: bool = False) -> dict:
+              use_rag: bool = True, force_yoruba: bool = False,
+              history: Optional[list] = None) -> dict:
         """Run the agentic loop for a request and return a result dict."""
         if not self._started:
             self.start(cwd=cwd)
@@ -258,7 +266,7 @@ class Runtime:
         yoruba = self._yoruba_status(request, force=force_yoruba)
         effective_request = self._to_english(request) if yoruba == "active" else request
 
-        loop = self.make_agent(permissions=permissions, reporter=reporter, cwd=cwd)
+        loop = self.make_agent(permissions=permissions, reporter=reporter, cwd=cwd, history=history)
         context = self.retriever.context(effective_request) if use_rag else ""
         res = loop.run(effective_request, context=context)
         answer = res.answer

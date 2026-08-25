@@ -52,8 +52,31 @@ def _file_context(cid: Optional[str], budget: int = 3000) -> str:
     return "Attached files the user uploaded:\n" + "\n\n".join(parts)
 
 
+def _history_for_agent(store: Optional[ConversationStore], cid: Optional[str]) -> list:
+    """Prior turns of this conversation, in AgentLoop's role/content shape.
+
+    A fresh AgentLoop is built per HTTP request (unlike the TUI/terminal chat,
+    which keep one alive for the whole session and so track this on their
+    own) — without this, every request is amnesiac: a follow-up like "list
+    them" right after "list my Desktop folders" has no idea what "them"
+    refers to, and previous live testing showed the agent not even re-running
+    list_dir on the follow-up, just guessing. The conversation store already
+    persists every turn for the UI's history sidebar; this just also feeds
+    it back to the model. Excludes the just-added current user message
+    (that's passed separately as the turn's own request) and caps to the
+    same last-8-messages window AgentLoop itself keeps once warm.
+    """
+    if not store or not cid:
+        return []
+    conv = store.get(cid)
+    if not conv or not conv.get("messages"):
+        return []
+    prior = conv["messages"][:-1]  # drop the current turn's just-stored user message
+    return [{"role": m["role"], "content": m["content"]} for m in prior[-8:]]
+
+
 def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None,
-            yoruba: bool = False) -> dict:
+            yoruba: bool = False, store: Optional[ConversationStore] = None) -> dict:
     """Produce an assistant reply for a message in the given mode.
 
     ``yoruba`` is the explicit UI toggle (sabi serve's Yoruba switch) —
@@ -75,7 +98,8 @@ def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None
                     "tps": round(gen.tokens_per_second, 2), "actions": []}
         if mode == "agent":
             perms = PermissionManager(auto_approve=True)  # web auto-approves
-            res = runtime.agent(msg, permissions=perms, reporter=Reporter(), force_yoruba=yoruba)
+            res = runtime.agent(msg, permissions=perms, reporter=Reporter(), force_yoruba=yoruba,
+                                history=_history_for_agent(store, cid))
             return {"answer": res.get("answer", ""), "intent": "AGENT",
                     "tps": 0, "actions": res.get("actions", [])}
         # auto: unambiguous small talk stays a plain, tool-free chat reply;
@@ -94,7 +118,8 @@ def _answer(runtime: Runtime, message: str, mode: str, cid: Optional[str] = None
             return {"answer": "", "error": res.get("error", "request failed"),
                     "intent": res.get("intent", "CHAT"), "actions": []}
         perms = PermissionManager(auto_approve=True)  # web auto-approves
-        res = runtime.agent(msg, permissions=perms, reporter=Reporter(), force_yoruba=yoruba)
+        res = runtime.agent(msg, permissions=perms, reporter=Reporter(), force_yoruba=yoruba,
+                            history=_history_for_agent(store, cid))
         return {"answer": res.get("answer", ""), "intent": "AGENT",
                 "tps": 0, "actions": res.get("actions", [])}
     except Exception as exc:  # noqa: BLE001
@@ -176,7 +201,7 @@ def create_app(runtime: Runtime, store: ConversationStore):
             cid = store.create()["id"]
 
         store.add_message(cid, "user", message)
-        result = _answer(runtime, message, mode, cid=cid, yoruba=yoruba)
+        result = _answer(runtime, message, mode, cid=cid, yoruba=yoruba, store=store)
         reply = result.get("answer") or result.get("error") or "(no response)"
         store.add_message(cid, "assistant", reply, meta={
             "intent": result.get("intent"), "tps": result.get("tps"),

@@ -140,6 +140,35 @@ def test_auto_mode_routes_real_requests_to_agent(client, monkeypatch):
     assert body["actions"] == ["OK: wrote main.py"]
 
 
+def test_auto_mode_passes_prior_conversation_as_history(client, monkeypatch):
+    # Regression test for a real incident: a follow-up like "list them" had
+    # zero context of what "them" referred to, because sabi serve built a
+    # fresh AgentLoop per HTTP request with no memory of earlier turns even
+    # though the conversation store already persists them for the sidebar.
+    import sabi.server as server_mod
+    captured = {}
+
+    def fake_agent(self, *a, **k):
+        captured["history"] = k.get("history")
+        return {"ok": True, "answer": "There are 2: Work, Personal", "actions": []}
+
+    monkeypatch.setattr(server_mod.Runtime, "agent", fake_agent)
+
+    r1 = client.post("/api/chat", json={"message": "list my desktop folders", "mode": "auto"})
+    cid = r1.get_json()["conversation_id"]
+
+    r2 = client.post("/api/chat", json={"message": "list them",
+                                        "conversation_id": cid, "mode": "auto"})
+    assert r2.status_code == 200
+    history = captured["history"]
+    assert history, "second call must receive the first turn as history"
+    assert any(m["content"] == "list my desktop folders" for m in history)
+    assert any(m["role"] == "assistant" for m in history)
+    # the just-added current-turn user message ("list them") must NOT be
+    # duplicated into history — it's passed as the request itself
+    assert not any(m["content"] == "list them" for m in history)
+
+
 def test_chat_accepts_yoruba_flag_without_crashing(client, monkeypatch):
     # No LLM model in the test env either way; this just proves the yoruba
     # request field is plumbed through _answer() -> Runtime.handle(force_yoruba)
