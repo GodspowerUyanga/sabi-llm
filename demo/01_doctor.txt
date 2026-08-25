@@ -1,4 +1,5 @@
-───────────────────────────────── SABI Doctor ──────────────────────────────────
+(.venv) godspower.uyanga@Interswitchng.com@isw-U260520-001:~/Desktop/projects/sabi-llm$ sabi doctor
+───────────────────────────────────────────────────────────────────────────── SABI Doctor ─────────────────────────────────────────────────────────────────────────────
 ✔ Python >= 3.9: 3.10.12
 ✔ Operating system: Linux 6.8.0-136-generic
 ✔ llama-cpp-python (inference): installed
@@ -7,16 +8,12 @@
 ✔ numpy (RAG speed): installed
 ✔ PyYAML (config): installed
 ✔ huggingface_hub (model download): installed
-✔ Model file: 
-/home/godspower.uyanga@Interswitchng.com/Desktop/projects/sabi-llm/models/sabi-v
-1.Q4_K_M.gguf
+✔ Model file: /home/godspower.uyanga@Interswitchng.com/Desktop/projects/sabi-llm/models/sabi-v1.Q4_K_M.gguf
 ✔ Model size on disk: 1.96 GB  (ADTC RAM budget: 7.0 GB)
 ✔ Est. runtime RAM: ~3.26 GB of 7.0 GB budget (47% of ceiling)
 ✔ Headroom vs budget: 3.74 GB free under the 7.0 GB ceiling
-✔ Measured peak RAM: run `sabi benchmark` to measure actual peak RSS during 
-inference
-✔ Available RAM: 10.15 GB free
-✔ Workspace writable: 
-/home/godspower.uyanga@Interswitchng.com/.sabi/sabi_workspace
+✔ Measured peak RAM: run `sabi benchmark` to measure actual peak RSS during inference
+✔ Available RAM: 8.89 GB free
+✔ Workspace writable: /home/godspower.uyanga@Interswitchng.com/.sabi/sabi_workspace
 
 ✔ All checks passed.

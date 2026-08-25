@@ -5,30 +5,15 @@ $ sabi agent --yes --cwd /tmp/sabi_demo_04 "create a file main.py that prints he
 ✔ done
 Wrote 14 chars to /tmp/sabi_demo_04/main.py
 · SABI is thinking…
-· SABI wants to make changes…
-✔ done
-hello
-· SABI is thinking…
-· SABI wants to access your files…
-✔ done
-d .sabi
-f main.py
-· SABI is thinking…
-· SABI wants to make changes…
-✖ action failed: Unknown tool: delete_file
-· SABI is thinking…
 ─────────────────────────────────── actions ────────────────────────────────────
   OK: write a file:  /tmp/sabi_demo_04/main.py  (14 chars)
-  OK: run a shell command:  python3 /tmp/sabi_demo_04/main.py
-  OK: list a directory:  /tmp/sabi_demo_04
-  FAIL: delete_file  {'path': '/tmp/sabi_demo_04/main.py'}
 ───────────────────────────────────── sabi ─────────────────────────────────────
-Here is what I completed: OK: write a file: /tmp/sabi_demo_04/main.py (14
-chars) OK: run a shell command: python3 /tmp/sabi_demo_04/main.py OK: list a
-directory: /tmp/sabi_demo_04 FAIL: delete_file {'path':
-'/tmp/sabi_demo_04/main.py'}
+Your file main.py has been created and contains the text:
+```python
+print('hello')
+```
 
 $ cat /tmp/sabi_demo_04/main.py
 print('hello')
-# file still present — the FAIL above never actually deleted anything,
-# because delete_file isn't a registered tool. See demo/README.md.
+# one tool call, then a proper {"final": ...} answer, then stopped — no
+# extra "verification" or invented cleanup step. See demo/README.md.

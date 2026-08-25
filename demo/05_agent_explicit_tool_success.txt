@@ -9,27 +9,14 @@ Wrote 14 chars to /tmp/sabi_demo_05/main.py
 ✔ done
 hello
 · SABI is thinking…
-· SABI wants to access your files…
-✔ done
-d .sabi
-f main.py
-· SABI is thinking…
-· SABI wants to make changes…
-✖ action failed: Unknown tool: delete_dir
-· SABI is thinking…
 ─────────────────────────────────── actions ────────────────────────────────────
   OK: write a file:  /tmp/sabi_demo_05/main.py  (14 chars)
   OK: run a shell command:  python /tmp/sabi_demo_05/main.py
-  OK: list a directory:  /tmp/sabi_demo_05
-  FAIL: delete_dir  {'path': '/tmp/sabi_demo_05'}
 ───────────────────────────────────── sabi ─────────────────────────────────────
-Here is what I completed: OK: write a file: /tmp/sabi_demo_05/main.py (14
-chars) OK: run a shell command: python /tmp/sabi_demo_05/main.py OK: list a
-directory: /tmp/sabi_demo_05 FAIL: delete_dir {'path':
-'/tmp/sabi_demo_05'}
+The script printed 'hello' successfully.
 
 $ ls /tmp/sabi_demo_05/ && cat /tmp/sabi_demo_05/main.py
 main.py
 print('hello')
-# directory and file both still present — delete_dir isn't a registered
-# tool, so the attempted call failed safely with no filesystem effect.
+# two tool calls (write, run), then a proper {"final": ...} answer, then
+# stopped — no invented list/delete step. See demo/README.md.
