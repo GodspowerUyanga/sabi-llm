@@ -8,7 +8,7 @@
 | **Primary track** | Coding Assistants |
 | **Cross-disciplinary integration** | Coding Assistant × Corporate/Enterprise × Autonomous AI Agents |
 | **Repository** | https://github.com/godspoweruyanga/sabi-llm |
-| **Model** | Qwen2.5-Coder-3B-Instruct, Q4_K_M GGUF (~2.0 GB), runs via llama.cpp — sourced from Qwen's official repo (https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF); saved locally as `sabi-v1.Q4_K_M.gguf` |
+| **Model** | Qwen2.5-Coder-3B-Instruct, Q4_K_M GGUF (~2.0 GB), runs via llama.cpp — downloaded automatically on first start from SABI's own repo (https://huggingface.co/Doctorgp1/sabi-v1), an unmodified mirror of Qwen's official release; saved locally as `sabi-v1.Q4_K_M.gguf` |
 | **Target hardware** | ADTC Standard Laptop — 8 GB RAM, no discrete GPU, Ubuntu 22.04 |
 | **Memory ceiling** | 7 GB (hard limit; exceeding it = disqualification) |
 | **Authors** | Godspower Uyanga (lead) · Oreoluwa Akinwe |
@@ -229,6 +229,18 @@ below the table):*
 > 2,104,932,800 bytes) with a model card, `LICENSE`, and `NOTICE` disclosing
 > the Qwen Research License. The stale 4.68 GB build referenced above is no
 > longer live.
+>
+> **2026-08-26.** `config/default.yaml`, `sabi/config.py`, and
+> `download_model.sh` now source the model from `Doctorgp1/sabi-v1` by
+> default instead of Qwen's upstream repo directly (same verified file — see
+> the note above). More importantly, downloading is no longer a separate
+> manual step at all: `sabi run` / `chat` / `tui` / `serve` all check for the
+> model on startup and fetch it automatically (no `[Y/n]` prompt) if it's
+> missing, and `sabi serve` (the web UI) does the same before it starts
+> listening — so a judge only has to run one command and wait, not follow a
+> multi-step setup. The Yoruba translation layer (§11) now works the same
+> way: it downloads itself on the first Yoruba message rather than requiring
+> `python scripts/download_yoruba_model.py` to be run by hand first.
 
 > **Hardware caveat.** This run was on the development workstation (22 logical
 > cores, sustained package temps of 90+ °C under load from unrelated processes),
@@ -374,7 +386,7 @@ sabi run                # launch the coworker
 - `download_model.sh` (repo root) is the audit-harness-facing download script;
   it and `metadata.json._runtime.model_path` agree on `models/sabi-v1.Q4_K_M.gguf`.
 - Config is in `config/default.yaml`, overridable via `SABI_*` env vars.
-- Model source is pinned (`Qwen/Qwen2.5-Coder-3B-Instruct-GGUF`, `qwen2.5-coder-3b-instruct-q4_k_m.gguf`, saved locally as `sabi-v1.Q4_K_M.gguf`).
+- Model source is pinned (`Doctorgp1/sabi-v1`, `sabi-v1.Q4_K_M.gguf` — a verified, unmodified mirror of Qwen's official `Qwen2.5-Coder-3B-Instruct-GGUF` release, saved locally as `sabi-v1.Q4_K_M.gguf`).
 - The test suite covers routing, permissions, agent file operations, RAG,
   memory, the web server, and the TUI (headless).
 

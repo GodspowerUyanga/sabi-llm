@@ -39,38 +39,24 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from sabi.config import load_config        # noqa: E402
+from sabi import downloader                 # noqa: E402
+
 MODELS = ROOT / "models"
-SABI_HF_REPO = "Doctorgp1/sabi-yoruba-llm"
+SABI_HF_REPO = downloader.YORUBA_HF_REPO
 HF_REPO = "facebook/nllb-200-distilled-600M"
 OUT_DIR = MODELS / "sabi-yoruba-tts"
 CACHE_DIR = MODELS / ".hf_cache"
 
 
 def download(force: bool = False) -> None:
-    if OUT_DIR.exists() and (OUT_DIR / "model.bin").exists() and not force:
-        print(f"  sabi-yoruba-llm already present at {OUT_DIR} (use --force to redo)")
-        return
-
     try:
-        from huggingface_hub import snapshot_download
-    except ImportError:
-        print("Install deps first:  pip install huggingface_hub")
+        downloader.download_yoruba_model(load_config(root=ROOT), force=force)
+    except RuntimeError as exc:
+        print(exc)
         sys.exit(1)
-
-    print(f"\nDownloading pre-converted sabi-yoruba-llm from {SABI_HF_REPO} ({OUT_DIR})")
-    print("~635 MB, int8 CTranslate2 — no torch or conversion needed.\n")
-
-    if OUT_DIR.exists():
-        shutil.rmtree(OUT_DIR)
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    snapshot_download(
-        SABI_HF_REPO,
-        local_dir=str(OUT_DIR),
-        allow_patterns=["*.bin", "*.json", "*.model"],
-    )
-
-    print(f"\n  Done. sabi-yoruba-llm is ready at {OUT_DIR}")
     print("  yoruba_enabled: true is already the default in config/default.yaml —")
     print("  SABI will translate Yoruba turns automatically.\n")
 

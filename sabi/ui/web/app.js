@@ -312,7 +312,7 @@
       } else {
         els.yorubaToggle.disabled = true;
         els.yorubaToggle.title = s.yoruba_enabled
-          ? "sabi-yoruba-tts isn't downloaded yet — run: python scripts/download_yoruba_model.py"
+          ? "sabi-yoruba-llm downloads automatically the first time you send a Yoruba message"
           : "Yoruba is disabled in config (yoruba_enabled: false)";
       }
     } catch (e) { els.modelLabel.textContent = "offline"; }

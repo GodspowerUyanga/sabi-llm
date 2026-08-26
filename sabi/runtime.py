@@ -157,6 +157,16 @@ class Runtime:
             return "off"
         if translate.available(str(self.config.abs_yoruba_model_path())):
             return "active"
+        # First Yoruba turn: fetch the translation layer on the spot so the
+        # user never has to touch a terminal. download_yoruba_model() is a
+        # no-op once it's present, so this only ever does real work once.
+        try:
+            from . import downloader
+            downloader.download_yoruba_model(self.config, progress=False)
+        except Exception:
+            pass
+        if translate.available(str(self.config.abs_yoruba_model_path())):
+            return "active"
         return "unavailable"
 
     def yoruba_available(self) -> bool:
@@ -173,8 +183,10 @@ class Runtime:
             return text + f"\n\n_(Yoruba translation unavailable right now: {exc})_"
 
     _YORUBA_UNAVAILABLE_NOTE = (
-        "\n\n_(sabi-yoruba-tts isn't installed yet, so this reply is in English — "
-        "run `python scripts/download_yoruba_model.py` to enable Yoruba.)_"
+        "\n\n_(sabi-yoruba-llm couldn't be fetched automatically (offline, or the "
+        "download failed) — replying in English for now. It'll retry on your next "
+        "message, or run `python scripts/download_yoruba_model.py` to fetch it "
+        "manually.)_"
     )
 
     # ------------------------------------------------------------- handling

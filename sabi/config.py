@@ -45,8 +45,8 @@ USER_DATA_ROOT = Path.home() / ".sabi"
 DEFAULTS: Dict[str, Any] = {
     # --- Model ---
     "model_path": "models/sabi-v1.Q4_K_M.gguf",
-    "hf_repo_id": "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
-    "hf_filename": "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
+    "hf_repo_id": "Doctorgp1/sabi-v1",
+    "hf_filename": "sabi-v1.Q4_K_M.gguf",
     "hf_revision": "main",
     "context_length": 4096,
     "max_tokens": 1024,

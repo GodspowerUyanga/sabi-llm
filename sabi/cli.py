@@ -245,25 +245,18 @@ def cmd_download(args) -> int:
 
 
 def _ensure_model(rt) -> None:
-    """If the model is missing, offer to download it (interactive only)."""
+    """If the model is missing, fetch it automatically — no prompt, no stress."""
     if rt.model and rt.model.is_available():
         return
-    import sys as _sys
     from . import downloader
     size_hint = "~2 GB" if "3b" in rt.config.hf_filename.lower() else "the model (a few GB)"
-    if not _sys.stdin.isatty():
-        console.warn("Model not found. Run `sabi download` to fetch it.")
-        return
-    console.warn("No model found locally.")
-    ans = input(f"  Download it now from Hugging Face ({size_hint})?  [Y/n] > ").strip().lower()
-    if ans in ("", "y", "yes"):
-        try:
-            downloader.download_model(rt.config)
-            console.success("Model downloaded. Starting…\n")
-        except Exception as exc:  # noqa: BLE001
-            console.error(str(exc))
-    else:
-        console.info("Skipping download. You can run `sabi download` later.\n")
+    console.warn(f"No model found locally — downloading it now ({size_hint})…")
+    try:
+        downloader.download_model(rt.config)
+        console.success("Model downloaded. Starting…\n")
+    except Exception as exc:  # noqa: BLE001
+        console.error(str(exc))
+        console.info("You can retry any time with `sabi download`.\n")
 
 
 def cmd_version(args) -> int:

@@ -79,16 +79,17 @@ run it from inside whatever project you want SABI to work on:
 
 ```bash
 pip install "sabi-llm[full]"   # SABI + everything it needs to actually run
-sabi download                  # pulls the model (~2 GB), once, into ~/.sabi/models/
 cd ~/your-project              # cd into the codebase you want help with
 sabi                           # start the offline AI coworker, scoped to this project
 ```
 
-That's everything. The model downloads once into `~/.sabi/models/` — shared
-across every project on the machine, not re-downloaded per project — and each
-project gets its own `.sabi/` folder (created next to your code, like `.git/`)
-for SABI's memory of that specific codebase. (Skip `sabi download` if you
-like — the first `sabi run` offers to download it for you.)
+That's everything — no separate download step. The first start fetches the
+model (~2 GB, once) into `~/.sabi/models/` automatically, no prompt, nothing
+to type; every start after that is instant since it's already there. It's
+shared across every project on the machine, not re-downloaded per project —
+each project just gets its own `.sabi/` folder (created next to your code,
+like `.git/`) for SABI's memory of that specific codebase. (Run `sabi
+download` yourself first if you'd rather not wait on the first `sabi` call.)
 
 Building from source instead (contributing, or the ADTC audit harness) still
 works the usual way — see [Installation, in detail](#installation-in-detail).
@@ -173,21 +174,19 @@ it downloads on demand into `models/`. You don't need a Hugging Face account.
 sabi download
 ```
 
-This streams `qwen2.5-coder-3b-instruct-q4_k_m.gguf` from Qwen's official
-[`Qwen/Qwen2.5-Coder-3B-Instruct-GGUF`](https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF)
-repo (verified 2.0 GB), saving it locally as `models/sabi-v1.Q4_K_M.gguf`, with a
-progress bar, and creates the `models/` folder automatically. You can also just
-start SABI — the first `sabi run` / `sabi chat` / `sabi tui` will offer to
-download it for you.
+This streams `sabi-v1.Q4_K_M.gguf` from SABI's own, fully public
+[`Doctorgp1/sabi-v1`](https://huggingface.co/Doctorgp1/sabi-v1) repo (verified
+2.0 GB, no credentials needed), saving it locally as `models/sabi-v1.Q4_K_M.gguf`,
+with a progress bar, and creates the `models/` folder automatically. You don't
+even need to run this yourself — **`sabi run` / `sabi chat` / `sabi tui` / `sabi serve`
+all download it automatically on first start if it's missing**, no prompt, no
+extra step.
 
-The same file is also mirrored at
-**[huggingface.co/Doctorgp1/sabi-v1](https://huggingface.co/Doctorgp1/sabi-v1)**
-for direct, one-click download — a fully public, credential-free source that
-satisfies the ADTC audit requirements as-is. It's an unmodified copy of
-Qwen's official release (see that repo's model card for the SHA256 and full
-attribution); Qwen2.5-Coder-3B-Instruct itself ships under the **Qwen
-Research License** (non-commercial), separate from SABI's own MIT license —
-see [docs/MODEL.md](docs/MODEL.md) for details.
+`Doctorgp1/sabi-v1` is an unmodified mirror of Qwen's official
+`Qwen2.5-Coder-3B-Instruct` Q4_K_M release (see that repo's model card for the
+SHA256 and full attribution); Qwen2.5-Coder-3B-Instruct itself ships under the
+**Qwen Research License** (non-commercial), separate from SABI's own MIT
+license — see [docs/MODEL.md](docs/MODEL.md) for details.
 
 Verify it's ready (and see its size vs the 7 GB budget):
 
@@ -294,8 +293,8 @@ environment variable named `SABI_<KEY>` (uppercase), or copy `.env.example` to
 
 ```bash
 SABI_MODEL_PATH=models/sabi-v1.Q4_K_M.gguf
-SABI_HF_REPO_ID=Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
-SABI_HF_FILENAME=qwen2.5-coder-3b-instruct-q4_k_m.gguf
+SABI_HF_REPO_ID=Doctorgp1/sabi-v1
+SABI_HF_FILENAME=sabi-v1.Q4_K_M.gguf
 SABI_TEMPERATURE=0.4
 SABI_CONTEXT_LENGTH=4096
 SABI_N_THREADS=0        # 0 = auto (use all physical cores)

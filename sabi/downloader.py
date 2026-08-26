@@ -18,7 +18,13 @@ import urllib.error
 from pathlib import Path
 from typing import Optional
 
+import shutil
+
 from .config import Config
+
+# SABI's own pre-converted Yoruba translation layer (int8 CTranslate2).
+# See scripts/download_yoruba_model.py for the from-scratch conversion path.
+YORUBA_HF_REPO = "Doctorgp1/sabi-yoruba-llm"
 
 
 def resolve_url(repo_id: str, filename: str, revision: str = "main") -> str:
@@ -124,3 +130,41 @@ def download_model(
             f"Model download failed.\n  direct: {direct_err}\n  hub: {exc}\n"
             f"Verify the file exists at {url}"
         )
+
+
+def download_yoruba_model(config: Config, force: bool = False, progress: bool = True) -> Path:
+    """Fetch the pre-converted sabi-yoruba-llm translation layer into models/.
+
+    Downloads the already-quantized int8 CTranslate2 model directly from
+    SABI's own Hugging Face repo (~635 MB) -- no torch, no conversion step.
+    Skips the download if it's already present (unless ``force``).
+    """
+    out_dir = config.abs_yoruba_model_path()
+    if out_dir.exists() and (out_dir / "model.bin").exists() and not force:
+        return out_dir
+
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        raise RuntimeError(
+            "Could not download the Yoruba translation model: huggingface_hub "
+            "is not installed. Install the translate extra "
+            '(`pip install "sabi-llm[translate]"`) or `pip install huggingface_hub`.'
+        )
+
+    if progress:
+        print(f"Downloading sabi-yoruba-llm from {YORUBA_HF_REPO} (~635 MB) to {out_dir}")
+
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    snapshot_download(
+        YORUBA_HF_REPO,
+        local_dir=str(out_dir),
+        allow_patterns=["*.bin", "*.json", "*.model"],
+    )
+
+    if progress:
+        print(f"sabi-yoruba-llm ready at {out_dir}")
+    return out_dir

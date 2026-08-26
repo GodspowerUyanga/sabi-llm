@@ -433,6 +433,15 @@ def serve(config: Optional[Config] = None, host: str = "127.0.0.1",
         return 1
 
     config = config or load_config()
+    if not config.abs_model_path().exists():
+        from . import downloader
+        print("No model found locally — downloading it now (~2 GB)…")
+        try:
+            downloader.download_model(config)
+            print("Model ready.\n")
+        except Exception as exc:  # noqa: BLE001
+            print(f"Model download failed: {exc}\nStarting anyway — retry with `sabi download`.\n")
+
     runtime = Runtime(config).start()
     store = ConversationStore(config.abs_workspace() / ".sabi" / "conversations.json")
     app = create_app(runtime, store)
