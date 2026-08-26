@@ -41,8 +41,13 @@ __pycache__/
 build/
 dist/
 .venv/
+.venv-*/
 venv/
 env/
+
+# Local Gradio share-link demo scratch (TLS cert for the tunnel) — never
+# part of the tracked repo; gradio_demo.py itself is.
+.gradio/
 .pytest_cache/
 .coverage
 htmlcov/
