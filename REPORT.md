@@ -8,12 +8,13 @@
 | **Primary track** | Coding Assistants |
 | **Cross-disciplinary integration** | Coding Assistant × Corporate/Enterprise × Autonomous AI Agents |
 | **Repository** | https://github.com/godspoweruyanga/sabi-llm |
+| **Live demo** | https://8554ef3b3ec8bc6c1f.gradio.live — try it with no install; see the note below the table |
 | **Model** | Qwen2.5-Coder-3B-Instruct, Q4_K_M GGUF (~2.0 GB), runs via llama.cpp — downloaded automatically on first start from SABI's own repo (https://huggingface.co/Doctorgp1/sabi-v1), an unmodified mirror of Qwen's official release; saved locally as `sabi-v1.Q4_K_M.gguf` |
 | **Target hardware** | ADTC Standard Laptop — 8 GB RAM, no discrete GPU, Ubuntu 22.04 |
 | **Memory ceiling** | 7 GB (hard limit; exceeding it = disqualification) |
 | **Authors** | Godspower Uyanga (lead) · Oreoluwa Akinwe |
 | **License** | MIT (SABI's own code; the models it downloads carry their own separate licenses — see §13) |
-| **Bonus claims** | Budget-laptop profile: **claimed** · African-language bonus: **claimed** — Yoruba via sabi-yoruba-tts (see §11) |
+| **Bonus claims** | Budget-laptop profile: **claimed** · African-language bonus: **claimed** — Yoruba via sabi-yoruba-llm (see §11) |
 
 > **A note to reviewers on numbers.** The table in §8 is a real run of
 > `sabi benchmark` **and** the official `adtc-profiler` (both run 2026-08-25),
@@ -24,6 +25,18 @@
 > every number below came from an actual run, and every number is labelled
 > with the hardware it was measured on. We re-run both tools on the target
 > 8 GB no-GPU profile before Gate 2 and update this table with those figures.
+
+> **Live demo for reviewers.** **[8554ef3b3ec8bc6c1f.gradio.live](https://8554ef3b3ec8bc6c1f.gradio.live)**
+> is a hosted, click-and-test instance — the same `sabi-v1` model and
+> `sabi-yoruba-llm` layer as everywhere else in this report, restricted to
+> text-only replies (no file/shell access) since the link is public. Screenshot
+> below shows an English exchange and a Yoruba-toggled reply in the same
+> session. It's a temporary tunnel (best-effort up to ~1 week) from the
+> author's own machine, not a permanent deployment — if it's offline, the
+> README's [Quickstart](README.md#quickstart) reproduces it locally in
+> minutes.
+>
+> ![SABI's live Gradio demo, showing an English exchange and a Yoruba-toggled reply](demo/gradio-live-demo-overview.png)
 
 ---
 
@@ -331,7 +344,7 @@ they are what the repo's machine-readable submission record says.
   `language_scope: ["en", "yo"]`). Live testing (2026-08-14) showed the base
   model's raw Yoruba output was degenerate/repetitive — Qwen2.5-Coder-3B was
   never trained for Yoruba, so we did not ship a same-session prompt hack for
-  it. Instead we added **sabi-yoruba-tts**, a dedicated translation layer
+  it. Instead we added **sabi-yoruba-llm**, a dedicated translation layer
   (`sabi/translate.py`) around the same English-speaking model: a Yoruba turn
   is translated to English (`Runtime._to_english`), routed and answered
   exactly like any other request, then the English reply is translated back
@@ -433,7 +446,7 @@ sabi run                # launch the coworker
    10-slide defense deck.
 5. Tighten any UI spacing/behaviour found on real hardware.
 6. ~~Implement and validate Yoruba end-to-end, flip `african_alpha_claim`~~ —
-   done 2026-08-24: sabi-yoruba-tts (NLLB-200 int8) wired into
+   done 2026-08-24: sabi-yoruba-llm (NLLB-200 int8) wired into
    `Runtime.handle()`/`Runtime.agent()`, verified round-trip including
    code-fence preservation (§11). Re-confirm the combined RAM footprint on the
    ADTC Standard Laptop before Gate 2.

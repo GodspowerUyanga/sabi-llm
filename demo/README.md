@@ -44,6 +44,7 @@ Nothing here is fabricated or trimmed for effect.
 | `03_think_prd_example.txt` | `sabi think` — the Corporate/Enterprise reasoning engine producing a one-page PRD for an offline crop-price advisory tool. This is the input to the cross-disciplinary demo below. |
 | `04_agent_natural_phrasing_known_issue.txt` | `sabi agent` given natural phrasing ("create a file main.py that prints hello" — the *exact example from the agent's own system prompt*). One tool call (write), then a proper final answer, then stops. |
 | `05_agent_explicit_tool_success.txt` | The same intent plus "then run it". Two tool calls (write, run), then a proper final answer, then stops. |
+| `gradio-live-demo-overview.png` | Screenshot of the public [live demo](https://8554ef3b3ec8bc6c1f.gradio.live) — an English exchange and a Yoruba-toggled reply in the same session. Referenced from `README.md` and `REPORT.md`. |
 
 ## Why this matters for the video / live demo
 
@@ -53,9 +54,25 @@ issues are fixed and covered by 5 new regression tests (`tests/test_router.py`,
 before recording rather than assuming — don't discover a regression live on
 camera — but there's no known open issue to work around at this point.
 
+## Live demo
+
+**[8554ef3b3ec8bc6c1f.gradio.live](https://8554ef3b3ec8bc6c1f.gradio.live)** —
+a hosted, click-and-test instance of SABI's Coding Assistant (the same
+`sabi-v1` model + `sabi-yoruba-llm` layer as everywhere else in this repo),
+public with no install needed. Text-only (no file/shell access) since the
+link is open to the internet — see `README.md`'s "Live demo" section for the
+full writeup and `REPORT.md`'s header note for the reviewer-facing version.
+It's a temporary tunnel (best-effort up to ~1 week) from the author's own
+machine, not a permanent deployment.
+
+`gradio-live-demo-overview.png` (table above) is a real, unedited screenshot
+of it — an English exchange followed by a Yoruba-toggled reply in the same
+session, showing the chat history sidebar and document-upload panel too.
+
 ## Screenshots / video — still needed
 
-These are text transcripts, not the images/video Gate 1 asks for. You still
+The transcripts above are text, not the images/video Gate 1 asks for (the
+live-demo screenshot covers the web UI, but not the terminal/TUI). You still
 need to:
 1. Open a real terminal on your machine, run the same commands, and take actual
    screenshots (or a short screen recording) — text logs aren't a substitute.

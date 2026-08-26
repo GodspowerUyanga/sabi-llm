@@ -21,8 +21,35 @@ a ChatGPT-style web app.
 
 ---
 
+## Live demo
+
+**Try it right now, no install, no clone:** **[8554ef3b3ec8bc6c1f.gradio.live](https://8554ef3b3ec8bc6c1f.gradio.live)**
+
+A hosted instance of SABI's Coding Assistant, running the same `sabi-v1`
+model and `sabi-yoruba-llm` translation layer as the rest of this repo,
+behind a public link — click it and start chatting immediately. It mirrors
+`sabi serve`'s web UI: multi-conversation history, document upload (PDF,
+Word, Excel, PowerPoint, CSV, HTML, images) with summarization, and
+Auto/Think/Code modes, plus the **Reply in Yoruba** toggle (or just type in
+Yoruba — it auto-detects) for the African-language bonus. It's deliberately
+**text-only** — no file access, no shell execution — since this link is
+public on the open internet, unlike `sabi serve` itself.
+
+![SABI's live Gradio demo: an English exchange ("hello" → a greeting) followed by a Yoruba-toggled reply to "good morning"](demo/gradio-live-demo-overview.png)
+
+> **Note for reviewers.** This is a temporary tunnel (Gradio's free share
+> link, best-effort for up to ~1 week) proxying to the author's own machine —
+> it can go offline if that machine is off or the link expires. If it's down
+> when you check, every command in [Quickstart](#quickstart) below reproduces
+> the identical experience locally in a couple of minutes
+> (`pip install "sabi-llm[full]" && sabi serve`), or contact the author to
+> restart it.
+
+---
+
 ## Table of contents
 
+- [Live demo](#live-demo)
 - [What is SABI?](#what-is-sabi)
 - [Quickstart](#quickstart)
 - [Installation, in detail](#installation-in-detail)
