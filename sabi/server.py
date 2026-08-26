@@ -40,6 +40,7 @@ from .permissions import PermissionManager
 from .agent import Reporter
 from .filereader import read_any
 from .router import is_smalltalk
+from . import translate
 
 WEB_DIR = Path(__file__).resolve().parent / "ui" / "web"
 
@@ -433,14 +434,25 @@ def serve(config: Optional[Config] = None, host: str = "127.0.0.1",
         return 1
 
     config = config or load_config()
+    # Fetch every model this UI can use up front (coder + Yoruba layer) so a
+    # panel judge just runs `sabi serve` and everything works from the first
+    # message — no separate download step, no mid-conversation stall.
+    from . import downloader
     if not config.abs_model_path().exists():
-        from . import downloader
         print("No model found locally — downloading it now (~2 GB)…")
         try:
             downloader.download_model(config)
             print("Model ready.\n")
         except Exception as exc:  # noqa: BLE001
             print(f"Model download failed: {exc}\nStarting anyway — retry with `sabi download`.\n")
+    if config.yoruba_enabled and not translate.available(str(config.abs_yoruba_model_path())):
+        print("Downloading sabi-yoruba-llm (~635 MB)…")
+        try:
+            downloader.download_yoruba_model(config)
+            print("sabi-yoruba-llm ready.\n")
+        except Exception as exc:  # noqa: BLE001
+            print(f"sabi-yoruba-llm download failed: {exc}\n"
+                  "Starting anyway — Yoruba replies will be English until it's retried.\n")
 
     runtime = Runtime(config).start()
     store = ConversationStore(config.abs_workspace() / ".sabi" / "conversations.json")

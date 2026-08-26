@@ -238,9 +238,14 @@ below the table):*
 > model on startup and fetch it automatically (no `[Y/n]` prompt) if it's
 > missing, and `sabi serve` (the web UI) does the same before it starts
 > listening — so a judge only has to run one command and wait, not follow a
-> multi-step setup. The Yoruba translation layer (§11) now works the same
-> way: it downloads itself on the first Yoruba message rather than requiring
-> `python scripts/download_yoruba_model.py` to be run by hand first.
+> multi-step setup. The Yoruba translation layer (§11) is fetched the same
+> eager way, not lazily: every entry point above, `download_model.sh`, and
+> the public `gradio_demo.py` share-link demo all download **both**
+> `sabi-v1` and `sabi-yoruba-llm` up front (rather than only the coder model,
+> or waiting for a Yoruba message to trigger the second download), so a
+> judge who only follows the documented steps ends up with the full
+> bilingual build ready before their first message, not just the English
+> half.
 
 > **Hardware caveat.** This run was on the development workstation (22 logical
 > cores, sustained package temps of 90+ °C under load from unrelated processes),
@@ -370,10 +375,12 @@ cd sabi-llm
 python3 -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
 pip install -e ".[tui,serve,inference]"
-./download_model.sh    # audit-harness entry point: fetches the model (~2.0 GB)
+./download_model.sh    # audit-harness entry point: fetches sabi-v1 (~2.0 GB)
                         # into ./models/sabi-v1.Q4_K_M.gguf — matches
-                        # _runtime.model_path in metadata.json
-# or: sabi download     # equivalent, human-friendly CLI entry point
+                        # _runtime.model_path in metadata.json — plus
+                        # sabi-yoruba-llm (~635 MB) into
+                        # ./models/sabi-yoruba-tts/
+# or: sabi download     # equivalent, human-friendly CLI entry point for sabi-v1 only
 sabi doctor             # verify environment + size vs 7 GB budget
 sabi benchmark          # produce telemetry
 pytest                  # test suite, incl. headless TUI
@@ -385,6 +392,8 @@ sabi run                # launch the coworker
   [ADTC 2026 submission template](https://github.com/Africa-Deep-Tech-Foundation/adtc-2026-submission-template).
 - `download_model.sh` (repo root) is the audit-harness-facing download script;
   it and `metadata.json._runtime.model_path` agree on `models/sabi-v1.Q4_K_M.gguf`.
+  It also fetches `sabi-yoruba-llm` into `models/sabi-yoruba-tts/` in the same
+  run, so the audit flow ends with both models present, not just the coder model.
 - Config is in `config/default.yaml`, overridable via `SABI_*` env vars.
 - Model source is pinned (`Doctorgp1/sabi-v1`, `sabi-v1.Q4_K_M.gguf` — a verified, unmodified mirror of Qwen's official `Qwen2.5-Coder-3B-Instruct-GGUF` release, saved locally as `sabi-v1.Q4_K_M.gguf`).
 - The test suite covers routing, permissions, agent file operations, RAG,

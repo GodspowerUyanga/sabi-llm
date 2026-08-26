@@ -12,9 +12,24 @@ inference still runs on this machine; only the HTTPS front door is public.
 
 import gradio as gr
 
+from sabi import downloader, translate
+from sabi.config import load_config
 from sabi.runtime import Runtime
 
-runtime = Runtime().start()
+# Fetch every model this demo can use up front (coder + Yoruba layer) so
+# visitors never hit a mid-conversation "model not found" — same no-manual-
+# step behavior as `sabi serve` and the CLI.
+_cfg = load_config()
+if not _cfg.abs_model_path().exists():
+    print("No model found locally — downloading sabi-v1 (~2 GB)…")
+    downloader.download_model(_cfg)
+    print("sabi-v1 ready.\n")
+if _cfg.yoruba_enabled and not translate.available(str(_cfg.abs_yoruba_model_path())):
+    print("Downloading sabi-yoruba-llm (~635 MB)…")
+    downloader.download_yoruba_model(_cfg)
+    print("sabi-yoruba-llm ready.\n")
+
+runtime = Runtime(_cfg).start()
 
 DESCRIPTION = (
     "**sabi-v1** — offline Coding Assistant (code generation, debugging, "

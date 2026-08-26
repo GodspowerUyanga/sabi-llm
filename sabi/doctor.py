@@ -91,6 +91,21 @@ def run_checks(config: Config) -> List[Check]:
             f"not downloaded  (ADTC RAM budget: {config.ram_ceiling_gb:.1f} GB)",
         ))
 
+    # Yoruba translation layer (African Alpha Bonus) — optional, informational
+    # only: absence never fails `sabi doctor`, since it fetches itself
+    # automatically on the next `sabi run`/`chat`/`tui`/`serve` anyway.
+    if config.yoruba_enabled:
+        from . import translate
+        yoruba_dir = config.abs_yoruba_model_path()
+        yoruba_ready = translate.available(str(yoruba_dir))
+        checks.append(Check(
+            "sabi-yoruba-llm (Yoruba bonus)", True,
+            f"ready at {yoruba_dir}" if yoruba_ready
+            else "not downloaded yet — fetches automatically on next "
+                 "`sabi run`/`chat`/`tui`/`serve`, or run "
+                 "`python scripts/download_yoruba_model.py` now",
+        ))
+
     # Memory headroom
     snap = profiler.snapshot(config.thermal_ceiling_c)
     if snap.available_gb:

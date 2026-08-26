@@ -27,7 +27,7 @@ a ChatGPT-style web app.
 - [Quickstart](#quickstart)
 - [Installation, in detail](#installation-in-detail)
   - [Optional extras explained](#optional-extras-explained)
-- [Getting the model](#getting-the-model)
+- [Getting the models](#getting-the-models)
 - [The three interfaces](#the-three-interfaces)
 - [Command reference](#command-reference)
 - [Configuration](#configuration)
@@ -83,22 +83,28 @@ cd ~/your-project              # cd into the codebase you want help with
 sabi                           # start the offline AI coworker, scoped to this project
 ```
 
-That's everything — no separate download step. The first start fetches the
-model (~2 GB, once) into `~/.sabi/models/` automatically, no prompt, nothing
-to type; every start after that is instant since it's already there. It's
-shared across every project on the machine, not re-downloaded per project —
-each project just gets its own `.sabi/` folder (created next to your code,
-like `.git/`) for SABI's memory of that specific codebase. (Run `sabi
-download` yourself first if you'd rather not wait on the first `sabi` call.)
+That's everything — no separate download step. The first start fetches
+**both** models SABI needs — the ~2 GB coder model and the ~635 MB Yoruba
+translation layer (`sabi-yoruba-llm`) — into `~/.sabi/models/` automatically,
+no prompt, nothing to type; every start after that is instant since they're
+already there. They're shared across every project on the machine, not
+re-downloaded per project — each project just gets its own `.sabi/` folder
+(created next to your code, like `.git/`) for SABI's memory of that specific
+codebase. (Run `sabi download` yourself first if you'd rather not wait on the
+first `sabi` call — it only fetches the coder model; the Yoruba layer still
+follows on the first `sabi run`/`chat`/`tui`/`serve` start.)
 
 Building from source instead (contributing, or the ADTC audit harness) still
 works the usual way — see [Installation, in detail](#installation-in-detail).
 
 **ADTC 2026 audit note.** For the challenge's audit harness, use
-`./download_model.sh` instead of `sabi download` — same source, same
-destination (`models/sabi-v1.Q4_K_M.gguf`), but it's the plain, dependency-free
-entry point the [official submission template](https://github.com/Africa-Deep-Tech-Foundation/adtc-2026-submission-template)
-expects, and its path matches `_runtime.model_path` in [`metadata.json`](metadata.json).
+`./download_model.sh` instead of `sabi download` — same sabi-v1 source, same
+destination (`models/sabi-v1.Q4_K_M.gguf`), and it's the plain, dependency-free
+entry point (curl/wget only, no Python) the [official submission template](https://github.com/Africa-Deep-Tech-Foundation/adtc-2026-submission-template)
+expects, with its path matching `_runtime.model_path` in [`metadata.json`](metadata.json).
+It also fetches `sabi-yoruba-llm` into `models/sabi-yoruba-tts/` in the same
+run, so a judge who only follows the template's documented step still ends up
+with both models in place before ever starting SABI.
 
 ---
 
@@ -165,22 +171,32 @@ in `.sabi/` inside the project you run `sabi` from, next to your code.
 
 ---
 
-## Getting the model
+## Getting the models
 
-The quantized model (~2 GB) is hosted on Hugging Face — too large for Git — so
-it downloads on demand into `models/`. You don't need a Hugging Face account.
+SABI runs on two quantized models, both hosted on Hugging Face (too large for
+Git) and both **download automatically — you never have to fetch either one
+by hand**:
+
+| | Size | Repo | Used for |
+|---|---|---|---|
+| `sabi-v1.Q4_K_M.gguf` | ~2.0 GB | [`Doctorgp1/sabi-v1`](https://huggingface.co/Doctorgp1/sabi-v1) | Every request — code generation, chat, the agent loop |
+| `sabi-yoruba-llm` | ~635 MB | [`Doctorgp1/sabi-yoruba-llm`](https://huggingface.co/Doctorgp1/sabi-yoruba-llm) | Yoruba turns only — English↔Yoruba translation layer (see [African localization](#african-localization)) |
+
+`sabi run` / `sabi chat` / `sabi tui` / `sabi serve` all check for both on
+startup and fetch whichever is missing before doing anything else, no prompt,
+no extra step — so the very first command you run (whichever one it is)
+leaves you with everything SABI can do, not just the English half. Skip the
+wait later by fetching them yourself ahead of time:
 
 ```bash
-sabi download
+sabi download                                   # sabi-v1 (~2 GB)
+python scripts/download_yoruba_model.py         # sabi-yoruba-llm (~635 MB)
 ```
 
-This streams `sabi-v1.Q4_K_M.gguf` from SABI's own, fully public
-[`Doctorgp1/sabi-v1`](https://huggingface.co/Doctorgp1/sabi-v1) repo (verified
-2.0 GB, no credentials needed), saving it locally as `models/sabi-v1.Q4_K_M.gguf`,
-with a progress bar, and creates the `models/` folder automatically. You don't
-even need to run this yourself — **`sabi run` / `sabi chat` / `sabi tui` / `sabi serve`
-all download it automatically on first start if it's missing**, no prompt, no
-extra step.
+`sabi download` streams `sabi-v1.Q4_K_M.gguf` from SABI's own, fully public
+`Doctorgp1/sabi-v1` repo (verified 2.0 GB, no credentials needed), saving it
+locally as `models/sabi-v1.Q4_K_M.gguf`, with a progress bar, and creates the
+`models/` folder automatically.
 
 `Doctorgp1/sabi-v1` is an unmodified mirror of Qwen's official
 `Qwen2.5-Coder-3B-Instruct` Q4_K_M release (see that repo's model card for the
@@ -188,7 +204,7 @@ SHA256 and full attribution); Qwen2.5-Coder-3B-Instruct itself ships under the
 **Qwen Research License** (non-commercial), separate from SABI's own MIT
 license — see [docs/MODEL.md](docs/MODEL.md) for details.
 
-Verify it's ready (and see its size vs the 7 GB budget):
+Verify both are ready (and see their size vs the 7 GB budget):
 
 ```bash
 sabi doctor
@@ -417,11 +433,15 @@ still real, runnable code.
 
 The quantized model is published on Hugging Face at
 **[huggingface.co/Doctorgp1/sabi-yoruba-llm](https://huggingface.co/Doctorgp1/sabi-yoruba-llm)**
-for direct download. See `scripts/download_yoruba_model.py` to fetch it, and
-`REPORT.md` §11 for verified examples and the CC-BY-NC-4.0 license
-disclosure covering the underlying NLLB weights (non-commercial — separate
-from the MIT license covering the rest of SABI). SABI claims the ADTC
-African Alpha Bonus (+15%) — see `metadata.json`
+and, like the coder model, **downloads itself automatically** — every SABI
+entry point (`sabi run`/`chat`/`tui`/`serve`, and the public `gradio_demo.py`)
+fetches it on startup alongside `sabi-v1` if it isn't already present, so
+Yoruba works out of the box with no separate setup. Run
+`python scripts/download_yoruba_model.py` yourself only if you'd rather fetch
+it ahead of time. See `REPORT.md` §11 for verified examples and the
+CC-BY-NC-4.0 license disclosure covering the underlying NLLB weights
+(non-commercial — separate from the MIT license covering the rest of SABI).
+SABI claims the ADTC African Alpha Bonus (+15%) — see `metadata.json`
 (`african_alpha_claim: true`, `language_scope: ["en", "yo"]`).
 
 Hausa and Igbo (`SABI_LANGUAGE=ha|ig`) are on the roadmap as the next
@@ -431,11 +451,14 @@ languages to add, using the same translation-layer pattern.
 
 ## FAQ
 
-**Do I have to download the model manually?** No. `sabi download` does it, and
-`sabi run` offers to do it on first launch.
+**Do I have to download the models manually?** No. `sabi download` /
+`python scripts/download_yoruba_model.py` fetch them if you want to run them
+ahead of time, but any `sabi` command — `run`, `chat`, `tui`, `serve` — fetches
+whichever of the two models (coder, Yoruba) is missing automatically the
+first time you use it, with no prompt.
 
-**Does it need internet?** Only once, to download the model. After that it is
-fully offline.
+**Does it need internet?** Only until both models are downloaded. After that
+it is fully offline.
 
 **Will it edit my files without asking?** Inside the current project it acts
 freely (read/write/create/run). When it needs to touch a folder **outside** the
