@@ -4,7 +4,7 @@
 
 # ---- Model ----
 model_path: models/sabi-v1.Q4_K_M.gguf
-hf_repo_id: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF # official Qwen repo (verified ~2GB Q4_K_M; our own Doctorgp1/sabi-v1 upload was mismatched at 4.68GB — see REPORT.md §6/§13)
+hf_repo_id: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF # official Qwen repo (verified ~2GB Q4_K_M; Doctorgp1/sabi-v1 now mirrors the same verified file — see REPORT.md §13)
 hf_filename: qwen2.5-coder-3b-instruct-q4_k_m.gguf         # file to download from that repo; saved locally as model_path above
 hf_revision: main                              # branch / tag / commit
 context_length: 4096
@@ -32,7 +32,7 @@ ui: terminal          # terminal | web
 language: en          # en | yo | ha | ig
 verbose: false
 
-# ---- sabi-yoruba-tts (African Alpha Bonus, +15%) ----
+# ---- sabi-yoruba-llm (African Alpha Bonus, +15%) ----
 # NLLB-200-distilled-600M -> int8 CTranslate2 (see scripts/download_yoruba_model.py).
 # CC-BY-NC-4.0 (non-commercial) — see REPORT.md §11 for disclosure.
 yoruba_enabled: true

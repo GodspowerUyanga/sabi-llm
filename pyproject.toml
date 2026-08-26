@@ -45,7 +45,7 @@ tui = ["textual>=0.60"]
 # Read PDFs, Word, Excel, PowerPoint, HTML, images, etc.
 docs = ["pypdf>=4.0", "python-docx>=1.1", "openpyxl>=3.1", "python-pptx>=0.6",
         "beautifulsoup4>=4.12"]
-# sabi-yoruba-tts (African Alpha Bonus): English<->Yoruba translation layer.
+# sabi-yoruba-llm (African Alpha Bonus): English<->Yoruba translation layer.
 translate = ["ctranslate2>=4.0", "transformers>=4.30"]
 # Everything a laptop install needs to actually run SABI end-to-end: the
 # inference backend, model download, the full-screen UI, the web UI, and

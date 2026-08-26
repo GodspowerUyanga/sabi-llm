@@ -4,7 +4,9 @@ SABI runs a single quantized **GGUF** model through llama.cpp. Before you upload
 anything to Hugging Face, you first need that quantized `.gguf` file. There are
 two ways to get it.
 
-> **Recommended base model:** `Qwen/Qwen2.5-Coder-3B-Instruct` (Apache-2.0) — chosen for the ADTC 7 GB ceiling (~2 GB on disk, ~3.5-4.5 GB at runtime).
+> **Recommended base model:** `Qwen/Qwen2.5-Coder-3B-Instruct` (Qwen Research
+> License — non-commercial; the 7B+ variants are Apache-2.0, but 3B is what
+> fits the ADTC 7 GB ceiling) — ~2 GB on disk, ~3.5-4.5 GB at runtime.
 > **Recommended quant:** `Q4_K_M` (best quality/size trade-off under the 7 GB ceiling).
 
 ---
@@ -137,13 +139,17 @@ A 3B at Q4_K_M is ~2 GB and very comfortable under the ceiling.
 
 ## Upload to Hugging Face
 
+Already done for this repo — the Q4_K_M GGUF is live at
+**[huggingface.co/Doctorgp1/sabi-v1](https://huggingface.co/Doctorgp1/sabi-v1)**,
+with its `LICENSE`/`NOTICE` and model card. To re-upload after rebuilding:
+
 ```bash
 huggingface-cli login
 huggingface-cli upload Doctorgp1/sabi-v1 \
   models/sabi-v1.Q4_K_M.gguf sabi-v1.Q4_K_M.gguf
 ```
 
-After uploading, anyone who clones the repo can fetch it with:
+Anyone can fetch it directly with:
 
 ```bash
 python scripts/download_model.py
@@ -156,5 +162,12 @@ python scripts/download_model.py
 
 ## Licensing reminder
 
-Qwen2.5-Coder is Apache-2.0. If you redistribute a quantized derivative, keep
-the upstream license and attribution in your Hugging Face model card.
+`Qwen/Qwen2.5-Coder-3B-Instruct` — the size SABI actually uses — ships under
+the **Qwen Research License** (non-commercial, research/evaluation use
+only), *not* Apache-2.0 (that only applies to the 7B+ variants). If you
+redistribute this model or a derivative, you must: include the upstream
+`LICENSE` file, add a `NOTICE` file with the required attribution text
+("Qwen is licensed under the Qwen RESEARCH LICENSE AGREEMENT, Copyright (c)
+Alibaba Cloud. All Rights Reserved."), mark any modified files as changed,
+and display "Built with Qwen" in related docs. This is separate from SABI's
+own MIT license — SABI's code is MIT, the model it downloads is not.

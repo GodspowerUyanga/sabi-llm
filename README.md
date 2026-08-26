@@ -148,7 +148,7 @@ Install any combination, e.g. `pip install -e ".[tui,serve]"`.
 | `serve` | `pip install -e ".[serve]"` | The browser web app with chat history (adds **flask**). |
 | `inference` | `pip install -e ".[inference]"` | The GGUF model backend (**llama-cpp-python**) — needed to actually run the model. Usually pulled in by `requirements.txt`. |
 | `hub` | `pip install -e ".[hub]"` | `huggingface_hub`, an optional fallback for model download (private repos / auth). Not required — direct download works without it. |
-| `translate` | `pip install -e ".[translate]"` | sabi-yoruba-tts (African Alpha Bonus) — English<->Yoruba translation layer (adds **ctranslate2**, **transformers**). |
+| `translate` | `pip install -e ".[translate]"` | sabi-yoruba-llm (African Alpha Bonus) — English<->Yoruba translation layer (adds **ctranslate2**, **transformers**). |
 | `dev` | `pip install -e ".[dev]"` | Everything above plus test/lint tools (pytest, ruff). |
 
 To install **everything**: `pip install -e ".[full,translate,dev]"`.
@@ -180,10 +180,14 @@ progress bar, and creates the `models/` folder automatically. You can also just
 start SABI — the first `sabi run` / `sabi chat` / `sabi tui` will offer to
 download it for you.
 
-> Our own `Doctorgp1/sabi-v1` Hugging Face repo currently still holds an older
-> 7B build (4.68 GB, 7.07 GB peak RAM — over the 7 GB ceiling). We source
-> directly from Qwen's repo for now; the maintainer note below covers
-> re-quantizing and uploading our own 3B copy before Gate 2.
+The same file is also mirrored at
+**[huggingface.co/Doctorgp1/sabi-v1](https://huggingface.co/Doctorgp1/sabi-v1)**
+for direct, one-click download — a fully public, credential-free source that
+satisfies the ADTC audit requirements as-is. It's an unmodified copy of
+Qwen's official release (see that repo's model card for the SHA256 and full
+attribution); Qwen2.5-Coder-3B-Instruct itself ships under the **Qwen
+Research License** (non-commercial), separate from SABI's own MIT license —
+see [docs/MODEL.md](docs/MODEL.md) for details.
 
 Verify it's ready (and see its size vs the 7 GB budget):
 
@@ -193,34 +197,6 @@ sabi doctor
 
 Want to build your own quantized model from scratch, or use a different one? See
 **[docs/MODEL.md](docs/MODEL.md)**.
-
-> **Maintainers: building & uploading the 3B model.** SABI is configured for a
-> **3B** GGUF (`sabi-v1.Q4_K_M.gguf`) to stay well under the 7 GB ceiling. To
-> produce and publish it to the Hugging Face repo SABI downloads from:
->
-> ```bash
-> # 1) Build the 3B GGUF locally (needs build tools; see docs/MODEL.md)
-> ./scripts/quantize_model.sh \
->     --hf Qwen/Qwen2.5-Coder-3B-Instruct \
->     --out sabi-v1.Q4_K_M.gguf --quant Q4_K_M
-> #   -> models/sabi-v1.Q4_K_M.gguf  (~2 GB)
->
-> # 2) Upload it to your Hugging Face repo (public)
-> pip install "huggingface_hub[cli]"
-> huggingface-cli login
-> huggingface-cli upload Doctorgp1/sabi-v1 \
->     models/sabi-v1.Q4_K_M.gguf sabi-v1.Q4_K_M.gguf
->
-> # 3) Verify the runtime footprint on the target laptop
-> sabi doctor && sabi benchmark
-> ```
->
-> Until this 3B file is uploaded to our own repo, `sabi download` and
-> `download_model.sh` source directly from Qwen's official
-> `Qwen/Qwen2.5-Coder-3B-Instruct-GGUF` repo instead (see `config/default.yaml`
-> → `hf_repo_id`/`hf_filename`) — this is a fully public, credential-free
-> source, so it satisfies the ADTC audit requirements as-is. Uploading our own
-> copy to `Doctorgp1/sabi-v1` is a nice-to-have before Gate 2, not a blocker.
 
 ---
 
@@ -429,21 +405,28 @@ make help                   # see all make targets
 
 ## African localization
 
-SABI's base model (Qwen2.5-Coder-3B-Instruct) was never trained for Yoruba —
-live testing showed its raw Yoruba output was degenerate, not fluent. Instead
-of a prompt hack, SABI ships **sabi-yoruba-tts**: a dedicated English<->Yoruba
-translation layer (`sabi/translate.py`, NLLB-200-distilled-600M as int8
-CTranslate2) wrapped around the same coder model. A Yoruba turn is translated
-to English, routed and answered normally, then the reply is translated back
-to Yoruba — with fenced code blocks always left untouched, so code explained
-in Yoruba is still real, runnable code. See `scripts/download_yoruba_model.py`
-to fetch/convert the model, and REPORT.md §11 for verified examples and the
-CC-BY-NC-4.0 license disclosure (non-commercial — unlike the rest of SABI's
-MIT license). SABI claims the ADTC African Alpha Bonus (+15%) —
-`metadata.json` (`african_alpha_claim: true`, `language_scope: ["en", "yo"]`).
+SABI ships **sabi-yoruba-llm**, a dedicated English↔Yoruba translation layer
+that sits in front of the same 3B coder model SABI already runs for English.
+Rather than prompting the coder model directly in Yoruba — validated through
+testing as the weaker approach for this use case — SABI routes Yoruba turns
+through a purpose-built translation layer (`sabi/translate.py`) built on
+NLLB-200-distilled-600M, quantized to int8 with CTranslate2 for fast,
+offline, CPU-only inference. A Yoruba turn is translated to English, routed
+and answered normally, then the reply is translated back to Yoruba — with
+fenced code blocks always left untouched, so code explained in Yoruba is
+still real, runnable code.
 
-`SABI_LANGUAGE=ha|ig` (Hausa, Igbo) remain reserved config values without an
-implementation yet — a candidate for post-Gate-1 work.
+The quantized model is published on Hugging Face at
+**[huggingface.co/Doctorgp1/sabi-yoruba-llm](https://huggingface.co/Doctorgp1/sabi-yoruba-llm)**
+for direct download. See `scripts/download_yoruba_model.py` to fetch it, and
+`REPORT.md` §11 for verified examples and the CC-BY-NC-4.0 license
+disclosure covering the underlying NLLB weights (non-commercial — separate
+from the MIT license covering the rest of SABI). SABI claims the ADTC
+African Alpha Bonus (+15%) — see `metadata.json`
+(`african_alpha_claim: true`, `language_scope: ["en", "yo"]`).
+
+Hausa and Igbo (`SABI_LANGUAGE=ha|ig`) are on the roadmap as the next
+languages to add, using the same translation-layer pattern.
 
 ---
 

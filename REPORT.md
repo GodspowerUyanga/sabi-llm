@@ -12,7 +12,7 @@
 | **Target hardware** | ADTC Standard Laptop — 8 GB RAM, no discrete GPU, Ubuntu 22.04 |
 | **Memory ceiling** | 7 GB (hard limit; exceeding it = disqualification) |
 | **Authors** | Godspower Uyanga (lead) · Oreoluwa Akinwe |
-| **License** | MIT |
+| **License** | MIT (SABI's own code; the models it downloads carry their own separate licenses — see §13) |
 | **Bonus claims** | Budget-laptop profile: **claimed** · African-language bonus: **claimed** — Yoruba via sabi-yoruba-tts (see §11) |
 
 > **A note to reviewers on numbers.** The table in §8 is a real run of
@@ -222,6 +222,13 @@ below the table):*
 > confirmed via the HF API), and every number above was re-measured against
 > that exact file with `sabi doctor` + `sabi benchmark` +
 > `python scripts/run_benchmark.py` on 2026-08-25.
+>
+> **2026-08-25, later same day.** `Doctorgp1/sabi-v1` on Hugging Face has
+> been corrected: it now holds this exact verified `sabi-v1.Q4_K_M.gguf`
+> (SHA256 `724fb256bec1ff062b2f65e4569e871ad2e95ab2a3989723d1769c54294730b7`,
+> 2,104,932,800 bytes) with a model card, `LICENSE`, and `NOTICE` disclosing
+> the Qwen Research License. The stale 4.68 GB build referenced above is no
+> longer live.
 
 > **Hardware caveat.** This run was on the development workstation (22 logical
 > cores, sustained package temps of 90+ °C under load from unrelated processes),
@@ -380,7 +387,8 @@ sabi run                # launch the coworker
 | Peak RAM near 7 GB → OOM/DQ | **Resolved on 3B** | 7B measured 7.07 GB (over budget); switched to a 3B, measured **3.45 GB** peak RSS on dev hardware (§8). Re-measure on the ADTC Standard Laptop to confirm headroom before audit. |
 | Dev-machine benchmark numbers may not transfer 1:1 to audit hardware | Medium | §8's numbers are from a 22-core workstation, not the target 4–8 thread laptop. Re-run `sabi benchmark` and the official `adtc-profiler` on the real (or closest available) target profile before Gate 2. |
 | CPU tokens/sec vs smaller-model teams (30% gate) | Low–Med | 3B roughly doubles tok/s vs 7B; measured 17.42 tok/s avg on dev hardware; streaming for perceived speed. |
-| sabi-yoruba-tts (NLLB-200) is CC-BY-NC-4.0, not MIT like the rest of SABI | Low, disclosed | Non-commercial license is appropriate for this non-commercial hackathon submission — disclosed in §11 rather than hidden. Would need a different translation model before any commercial use. |
+| sabi-yoruba-llm (NLLB-200) is CC-BY-NC-4.0, not MIT like the rest of SABI | Low, disclosed | Non-commercial license is appropriate for this non-commercial hackathon submission — disclosed in §11 rather than hidden. Would need a different translation model before any commercial use. |
+| Qwen2.5-Coder-3B-Instruct (the base model, `Doctorgp1/sabi-v1`) is under the Qwen Research License (non-commercial), not Apache-2.0 or MIT | Low, disclosed | Only the 3B/1.5B/0.5B Qwen2.5-Coder variants carry this non-commercial term (7B+ are Apache-2.0); appropriate for this non-commercial hackathon submission. `LICENSE`/`NOTICE`/attribution shipped alongside the mirrored GGUF on Hugging Face per the license's redistribution terms. Would need a differently-licensed base model before any commercial use. |
 | Combined resident footprint (3B coder model + Yoruba layer) vs 7 GB | Low | ~3.5–4.5 GB (coder, §8) + ~635 MB (NLLB int8, lazy-loaded only on a Yoruba turn) — real headroom under 7 GB even summed worst-case. Re-confirm on the ADTC Standard Laptop before Gate 2. |
 | Tool-call reliability on a small model | **Resolved 2026-08-14** | Was confirmed 2026-08-13: `sabi agent "create a file main.py that prints hello"` reproducibly returned the code as plain text instead of the `write_file` JSON call. A temperature-only fix (0.4→0.1) was tried and was **not** sufficient — re-tested live and it still narrated prose. Fixed by switching the agent loop to `json_mode=True` (llama.cpp's `response_format: json_object` grammar), which structurally rules out prose replies: every turn must be either `{"tool": ..., "args": {...}}` or `{"final": "..."}`. Re-verified live: the exact repro case now creates the file every run (3/3), and the actual audit `test_prompt` #2 ("Scaffold a Python CLI project structure with argparse") now produces a real 6-file scaffold (`main.py`, `setup.py`, `requirements.txt`, `__init__.py`, `README.md`, `.gitignore`) with correct, runnable `argparse` code — this previously stopped early. A secondary issue surfaced during the fix — the model sometimes re-verifies a completed file/command redundantly instead of stopping — mitigated with an exact-repeat-call dedup guard in `AgentLoop.run` that force-terminates the loop rather than burning the step budget; a prompt-only nudge alone did not fully fix this either. |
 | Model invents a nonexistent tool call after finishing a task | **Resolved 2026-08-25** | Observed 2026-08-25 (`demo/04`, `demo/05`): after correctly completing write→run→list, the model called one extra tool it invented itself (`delete_file`/`delete_dir`), rejected outright by `AgentLoop` with zero filesystem effect — the tool allowlist working as a safety net. Root-caused and fixed same day (see next row): `prompts/agent.txt` now carries an explicit no-deletion / stop-condition rule, and `run_shell` blocks `rm`/`rmdir`/`del`/`unlink`/`shred` at the code level regardless of what the model asks for. |

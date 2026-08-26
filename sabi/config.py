@@ -69,7 +69,7 @@ DEFAULTS: Dict[str, Any] = {
     "ui": "terminal",        # "terminal" or "web"
     "language": "en",        # en, yo (Yoruba), ha (Hausa), ig (Igbo)
     "verbose": False,
-    # --- sabi-yoruba-tts (African Alpha Bonus): NLLB-200-distilled-600M,
+    # --- sabi-yoruba-llm (African Alpha Bonus): NLLB-200-distilled-600M,
     # int8 CTranslate2. See scripts/download_yoruba_model.py and sabi/translate.py.
     "yoruba_enabled": True,
     "yoruba_model_path": "models/sabi-yoruba-tts",
